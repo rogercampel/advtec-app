@@ -8,9 +8,8 @@
  *     E minuta em que nenhum bloco se apoia num trecho também é "sem base":
  *     peça inteira escrita do zero não é minuta do acervo;
  *   - `fontes` de um bloco são os trechos que o MODELO diz ter usado. O código
- *     confere que existem e que os números e as menções a julgado do bloco estão
- *     neles — não que o argumento inteiro está lá. Sem fonte, o bloco sai marcado
- *     como texto novo (critério 2);
+ *     confere que existem — não que o argumento está neles. Sem fonte, o bloco
+ *     sai marcado como texto novo (critério 2);
  *   - citação de julgado sem correspondência no acervo não sai (critério 4).
  *     Falha fechado, por frase: uma lista de formas proibidas sempre deixa passar
  *     a próxima grafia ("REsp n.º", "Tema 1.234", número CNJ…), então a regra é
@@ -26,7 +25,7 @@ import { z } from "zod";
 import { normalizaParaCasar } from "@/lib/oab/travas";
 
 import { buscaPorProblema, type Buscador } from "./busca-por-problema";
-import { jsonDoModelo, motivoDaFalha, numerosApoiados, numerosDe, type ChamadaDoModelo } from "./leitura-por-modelo";
+import { jsonDoModelo, motivoDaFalha, numerosDe, type ChamadaDoModelo } from "./leitura-por-modelo";
 import type { TrechoDaPeca } from "./busca-por-problema";
 
 export const AVISO_DA_MINUTA =
@@ -94,11 +93,28 @@ const MENCAO_A_JULGADO = new RegExp(
 
 /** Números de 3 dígitos ou mais: o título "1. DOS FATOS" não é citação; "REsp 1.999.999" é. */
 const numerosLongos = (s: string) => numerosDe(s).filter((n) => n.length >= 3);
+
+/**
+ * Os números que um texto do acervo oferece, nas grafias em que a minuta os
+ * reescreve: inteiro ("7.347/1985" → 73471985), cada lado da barra ou do hífen
+ * sem o ponto de milhar (7347, 1985) e cada pedaço (7, 347). Medido com o Luna
+ * em 21/10/2026: "Lei nº 7.347/1985" no acervo vira "Lei nº 7.347/85" na minuta.
+ */
+function numerosDoAcervo(textos: string[]): Set<string> {
+  const ha = new Set<string>();
+  const sem0 = (n: string) => n.replace(/^0+(?=\d)/, "");
+  for (const bruto of textos.flatMap((t) => t.match(/\d[\d.,/-]*\d|\d/g) ?? [])) {
+    ha.add(sem0(bruto.replace(/[.,/-]/g, "")));
+    for (const lado of bruto.split(/[/-]/)) ha.add(sem0(lado.replace(/[.,]/g, "")));
+    for (const pedaco of bruto.split(/[.,/-]/)) if (pedaco) ha.add(sem0(pedaco));
+  }
+  return ha;
+}
 const literal = (s: string) => normalizaParaCasar(s).replace(/[^a-z0-9]+/g, " ").trim();
 
 /**
- * Por que a frase não pode sair, ou `null`. `apoio` são os textos dos trechos
- * em que ela se apoia. Duas regras:
+ * Por que a frase não pode sair, ou `null`. `apoio` são os textos do acervo
+ * que o modelo leu. Duas regras:
  *   - todo número de 3+ dígitos dela está nos trechos (número de recurso, tema,
  *     processo, data, valor — inventado, não tem onde estar);
  *   - se menciona julgado ou tribunal, a frase está escrita num dos trechos
@@ -107,7 +123,10 @@ const literal = (s: string) => normalizaParaCasar(s).replace(/[^a-z0-9]+/g, " ")
  */
 export function motivoDaFrase(frase: string, apoio: string[]): "numero_sem_apoio" | "julgado_sem_apoio" | null {
   const longos = numerosLongos(frase);
-  if (longos.length > 0 && !numerosApoiados(longos.join(" "), ...apoio)) return "numero_sem_apoio";
+  if (longos.length > 0) {
+    const ha = numerosDoAcervo(apoio);
+    if (!longos.every((n) => ha.has(n.replace(/^0+(?=\d)/, "")))) return "numero_sem_apoio";
+  }
   if (MENCAO_A_JULGADO.test(normalizaParaCasar(frase))) {
     const f = literal(frase);
     if (!apoio.some((a) => literal(a).includes(f))) return "julgado_sem_apoio";
@@ -156,7 +175,8 @@ function confere(texto: string, apoio: string[], removidas: RemovidasDaMinuta): 
     retirou = true;
     if (saida[saida.length - 1] !== MARCA_DO_RETIRADO) saida.push(MARCA_DO_RETIRADO);
   }
-  return { texto: saida.join(" "), retirou };
+  // As unidades se juntam com espaço; a pontuação que vinha colada no "]" volta para ele.
+  return { texto: saida.join(" ").replace(/\]\s+([.,;:)])/g, "]$1"), retirou };
 }
 
 const semMarcas = (s: string) => s.replace(/\[A COMPLETAR[^\]]*\]/gi, "").trim();
@@ -203,9 +223,10 @@ export async function escreveMinuta(args: {
     const pedidas = new Set(b.fontes);
     const validas = [...pedidas].filter((f) => textoDe.has(f));
     removidas.fonte_inexistente += pedidas.size - validas.length;
-    // Bloco com fonte se confere contra ELA; texto novo, contra o acervo lido inteiro.
-    const apoio = validas.length > 0 ? validas.map((f) => textoDe.get(f)!) : todos;
-    const { texto: conferido, retirou } = confere(b.texto.trim(), apoio, removidas);
+    // Contra o acervo lido inteiro, não só contra as fontes que o modelo apontou:
+    // medido com o Luna, a lei citada no bloco estava noutro trecho do acervo.
+    // O que importa travar é número e julgado que o acervo NÃO tem.
+    const { texto: conferido, retirou } = confere(b.texto.trim(), todos, removidas);
     faltaJurisprudencia ||= retirou;
     if (conferido === "") {
       removidas.bloco_vazio += 1;

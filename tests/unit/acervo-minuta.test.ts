@@ -148,6 +148,18 @@ describe("o que o código garante, sem depender do modelo", () => {
     expect(tudo(m)).not.toMatch(/Nesse julgado|1\.?999/);
   });
 
+  it("a pontuação colada no '[A COMPLETAR…]' do modelo continua colada (medido no Luna)", async () => {
+    const m = await minuta(JSON.stringify({ blocos: [{ texto: "EXMO. SR. DR. JUIZ DE DIREITO DA [A COMPLETAR: vara e comarca].", fontes: ["T1"] }, { texto: "[A COMPLETAR: qualificação], vem propor a ação.", fontes: ["T1"] }], faltou: [] }));
+    if (m.situacao !== "minuta") throw new Error(m.situacao);
+    expect(m.blocos.map((b) => b.texto)).toEqual(["EXMO. SR. DR. JUIZ DE DIREITO DA [A COMPLETAR: vara e comarca].", "[A COMPLETAR: qualificação], vem propor a ação."]);
+  });
+
+  it("duas frases retiradas seguidas viram UMA marca", async () => {
+    const m = await minuta(JSON.stringify({ blocos: [{ texto: "Da nulidade. Ver o REsp 1.999.999/SP. E o Tema 1.234 do STJ. Assim, é nula.", fontes: ["T1"] }], faltou: [] }));
+    if (m.situacao !== "minuta") throw new Error(m.situacao);
+    expect(m.blocos[0]!.texto).toBe(`Da nulidade. ${MARCA_DO_RETIRADO} Assim, é nula.`);
+  });
+
   it("citação partida em dois blocos não passa", async () => {
     const m = await minuta(JSON.stringify({ blocos: [{ texto: "Do mérito.", fontes: ["T1"] }, { texto: "Conforme decidiu o STJ no REsp", fontes: ["T1"] }, { texto: "1.999.999/SP, a cláusula é nula.", fontes: ["T1"] }], faltou: [] }));
     expect(tudo(m)).not.toMatch(/STJ no REsp|1\.?999/);
@@ -173,11 +185,17 @@ describe("o que o código garante, sem depender do modelo", () => {
     expect(m.blocos[0]!.texto).toContain("REsp 1.234.567/SP");
   });
 
-  it("número do bloco conferido contra a fonte DELE: valor que só existe noutro trecho não passa", async () => {
-    const hits = [{ ...HITS[0]!, content: "Dos fatos do caso." }, { ...HITS[1]!, content: "O valor da causa é R$ 19.500.000,00." }];
-    const m = await minuta(JSON.stringify({ blocos: [{ texto: "Dos fatos.", fontes: ["T1"] }, { texto: "O dano foi de R$ 19.500.000,00.", fontes: ["T1"] }], faltou: [] }), buscador(hits));
+  it("número conferido contra o acervo lido: o que ele tem fica (noutra grafia também), o que não tem sai", async () => {
+    const hits = [{ ...HITS[0]!, content: "Dos fatos do caso." }, { ...HITS[1]!, content: "Nos termos da Lei nº 7.347/1985, o valor da causa é R$ 19.500.000,00." }];
+    const blocos = [
+      { texto: "Dos fatos.", fontes: ["T1"] },
+      { texto: "Cabe a ação pela Lei nº 7.347/85.", fontes: ["T1"] }, // medido: o Luna reescreve o ano assim
+      { texto: "O dano foi de R$ 19.500.000,00.", fontes: ["T1"] },
+      { texto: "O dano foi de R$ 21.300.000,00.", fontes: ["T1"] },
+    ];
+    const m = await minuta(JSON.stringify({ blocos, faltou: [] }), buscador(hits));
     if (m.situacao !== "minuta") throw new Error(m.situacao);
-    expect(m.blocos[1]!.texto).toBe(MARCA_DO_RETIRADO);
+    expect(m.blocos.map((b) => b.texto)).toEqual(["Dos fatos.", "Cabe a ação pela Lei nº 7.347/85.", "O dano foi de R$ 19.500.000,00.", MARCA_DO_RETIRADO]);
   });
 
   it("título numerado e a ré não são confundidos com citação", async () => {
@@ -197,9 +215,9 @@ describe("o que o código garante, sem depender do modelo", () => {
 
   it("citação do acervo PARAFRASEADA não passa (falha fechado: só a frase copiada fica)", async () => {
     const hits = [{ ...HITS[0]!, content: "Conforme o REsp 1.234.567/SP, a cláusula é nula." }];
-    const m = await minuta(JSON.stringify({ blocos: [{ texto: "Nos termos do REsp 1.234.567/SP, a cláusula é nula.", fontes: ["T1"] }], faltou: [] }), buscador(hits));
+    const m = await minuta(JSON.stringify({ blocos: [{ texto: "Do mérito.", fontes: ["T1"] }, { texto: "Nos termos do REsp 1.234.567/SP, a cláusula é nula.", fontes: ["T1"] }], faltou: [] }), buscador(hits));
     if (m.situacao !== "minuta") throw new Error(m.situacao);
-    expect(m.blocos[0]!.texto).toBe(MARCA_DO_RETIRADO);
+    expect(m.blocos[1]!.texto).toBe(MARCA_DO_RETIRADO);
   });
 
   it("modelo dizendo que os trechos não servem: 'sem base', com o motivo", async () => {
@@ -221,8 +239,10 @@ describe("o que o código garante, sem depender do modelo", () => {
 });
 
 /*
- * Mutações (21/10/2026): 7 de 7 acusadas. Lista do que faltou sem a trava; bloco
- * sem a trava de citação; fonte inventada aceita; "nada no acervo" virando falha;
- * blocos vazios virando minuta; bloco sem fonte não marcado como novo; resposta
- * fora do formato virando "sem base".
+ * Mutações (21/10/2026, trava por apoio): 13 de 13 acusadas. Pontuação solta depois do "]"; Sem a regra dos números;
+ * sem a regra da menção a julgado; sem a grafia "7.347" de "7.347/1985"; números
+ * curtos contando (título "1." cairia); corte de frase em "Rel."/"j."; colchete
+ * "[A COMPLETAR]" cortado por dentro; marcas seguidas sem fundir; o que faltou sem
+ * a trava; "sem base" só com zero blocos; fonte inventada aceita; "nada no acervo"
+ * virando falha; resposta fora do formato virando "sem base".
  */

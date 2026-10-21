@@ -1,5 +1,5 @@
 {
- "aviso": "Respostas brutas do gpt-6-luna gravadas em 21/10/2026 por .impeccable/medir-minuta.mts; acervo = as páginas de tests/fixtures/pecas-publicas.json, na ordem.",
+ "aviso": "Respostas brutas do gpt-6-luna, gravadas em 21/10/2026 numa medição local (o script de medição não faz parte do repositório). Pedido de sistema: SISTEMA_DA_MINUTA de lib/acervo/minuta.ts; acervo = as páginas de tests/fixtures/pecas-publicas.json, na ordem, as 12 primeiras.",
  "gravadaEm": "2026-10-21",
  "modelo": "gpt-6-luna",
  "pedidos": {
