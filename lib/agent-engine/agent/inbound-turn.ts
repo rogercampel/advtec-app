@@ -182,6 +182,7 @@ import {
 } from './skills';
 import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
+import { DEFS_DA_ADVTEC, ferramentasDaAdvTec } from '@/lib/djen/ferramenta-do-agente'; // AdvTec (fork)
 import {
   loadChannelProvider,
   nomesDasFerramentas,
@@ -565,6 +566,7 @@ export const AGENT_TOOL_DEFS = {
       })
       .passthrough(),
   },
+  ...DEFS_DA_ADVTEC, // AdvTec (fork), spec 0010.E3
 } as const;
 
 /**
@@ -4162,6 +4164,7 @@ async function executarTurnoDoAgente(
         }
       },
     }),
+    ...ferramentasDaAdvTec({ pool, tenantId, leadId, conversationId: input.conversationId }), // AdvTec (fork), spec 0010.E3
   };
 
   // F3-02: a tool nativa só entra com janela configurada e callback habilitado

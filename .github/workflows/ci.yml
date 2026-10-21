@@ -25,6 +25,8 @@ on:
 # continua por job em publish-image.yml — mesma regra, menor escopo que precisa.
 permissions:
   contents: read
+  # Fork privado: a lista de arquivos do PR (passo de prévia) exige leitura de PR.
+  pull-requests: read
 
 # ── Uma rodada por PR: o push novo cancela a antiga — POR JOB, nunca por workflow
 #
@@ -144,7 +146,7 @@ jobs:
     # Guarda de travamento. O DETECTOR de crescimento é o passo `Orçamento de
     # tempo` no fim de cada parte; a medição que justifica o número está em
     # `TETOS`, em tests/unit/preambulo-do-ci-nao-come-o-relogio.test.ts.
-    timeout-minutes: 15
+    timeout-minutes: ${{ fromJSON(vars.VERIFY_TETO_MIN || '15') }}
     # Executor próprio para trabalho nosso quando EXECUTOR_PROPRIO=ligado; o
     # porquê e a guarda contra fork: comentário do e2e-parte no e2e.yml.
     runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}
@@ -283,7 +285,9 @@ jobs:
       # contra o REMOTO (e o script busca a base: o checkout daqui não traz origin/main).
       - name: Colisão de número de migration
         if: matrix.parte == 1
-        run: pnpm checar:colisao-de-migration
+        # AdvTec (fork): a base é a do PR. O padrão do script é origin/main, que no fork
+        # é uma cópia velha do original; no original, base_ref já é main.
+        run: pnpm checar:colisao-de-migration "origin/${{ github.base_ref || 'main' }}"
 
       # POR QUE NÃO HÁ UMA CAMADA "o número foi tomado depois da prévia": o
       # passo acima JÁ É ELA. O script busca a base no remoto no instante do job
@@ -468,7 +472,7 @@ jobs:
           #
           # A catraca que impede este número de subir sem razão escrita está em
           # tests/unit/preambulo-do-ci-nao-come-o-relogio.test.ts (`ORCAMENTOS`).
-          ORCAMENTO_MIN: "12"
+          ORCAMENTO_MIN: ${{ vars.VERIFY_ORCAMENTO_MIN || '12' }}
         run: |
           set -euo pipefail
           if [ -z "${VERIFY_INICIO:-}" ]; then
@@ -623,6 +627,8 @@ jobs:
         # consultas/hora por IP — o executor próprio é um IP só.
         env:
           GH_TOKEN: ${{ github.token }}
+          # Fork sem release publicada: a versão do original vem da variável do repositório.
+          CONFERENCIA_KIT_RELEASE: ${{ vars.CONFERENCIA_KIT_RELEASE }}
         run: pnpm test:db
 
       # O `update.sh` do cliente roda sobre um banco COM DADOS, e nenhum gate

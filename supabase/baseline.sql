@@ -55741,6 +55741,457 @@ create trigger trg_contato_anonimizado_esquece_a_agenda
   when (new.is_anonymized is true and new.address_book_name is not null)
   execute function public.fn_contato_anonimizado_esquece_a_agenda();
 
+-- ---- djen_coleta (migration 9001) ----
+-- ESTE BLOCO FICA ACIMA DA VARREDURA anon; SQL idêntico à migration da AdvTec.
+-- manifest: **A publicação do DJEN entra inteira, não duplica, e a prova do prazo não sai da mesa.** Traz `djen_oabs_monitoradas` (quais OABs o escritório vigia) e `djen_publicacoes` (o espelho do que a fonte mandou). **`texto` é `not null` de propósito:** a publicação tem de continuar legível com a API do CNJ fora do ar — que é o dia em que ela mais importa; medido em 300 itens de três consultas, 0% vinham sem teor e 2,7% sem `link`, por isso `link` é nulável e `texto` não. A unicidade é **`(organization_id, djen_id)`**, e não `djen_id` global: a MESMA publicação do DJEN pode intimar advogados de escritórios diferentes, e chave global recusaria a segunda — o segundo escritório perderia o prazo sem erro nenhum. **`oabs` é `jsonb`, não par de colunas** (`oab_numero`/`oab_uf`): uma publicação pode intimar DOIS advogados da mesma casa, e a versão inicial guardava só o primeiro que a deduplicação encontrasse; num produto de prazo, quem foi intimado decide quem tem de agir. Índice GIN porque a pergunta da tela é "quais são do advogado X". **Escrita revogada de `authenticated` e `anon`, TRUNCATE incluído** — `revoke insert, update, delete` NÃO cobre TRUNCATE, que é privilégio separado e **ignora RLS por definição**: sem ele, um usuário logado apagaria a prova de prazo de todos os escritórios de uma vez. **E o `grant` não inclui `anon`**, ao contrário do padrão do dump: `anon` é a chave que vai ao navegador, e intimação de cliente não tem caminho legítimo por ela; além disso `tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts` proíbe devolver `anon` depois do bloco da varredura, e este apêndice entra depois dele. Isolamento e grants provados contra Postgres em `tests/invariants/djen-isolamento.test.ts` — os 12 testes de unidade do ticket **não podiam** pegar isso, porque `Map` não tem RLS, `unique` nem `grant`. Idempotente: `create table if not exists`, `create index if not exists`, `drop policy if exists` antes de cada `create policy`, e `revoke` é idempotente por natureza.
+--
+-- ═══ POR QUE ESTA TABELA EXISTE ═══
+--
+-- O advogado pessoa física é intimado pelo DJEN. Medido em 18/08/2026
+-- (`docs/advtec/FONTES-DE-DADOS.md`): a API do CNJ é pública, sem chave, e
+-- filtra por OAB — `numeroOab=100000&ufOab=SP` devolveu 2.712 publicações.
+--
+-- A tentação seria guardar só o `link` e buscar o teor quando precisar. Isso
+-- transforma a prova do que foi publicado numa dependência de terceiro
+-- permanecer no ar. Prazo perdido não aceita "a API estava fora".
+--
+-- Medido em 300 itens reais de três consultas: **0% vêm sem `texto`**, mas
+-- **2,7% vêm sem `link`**. Ou seja, o campo que falta é justamente o ponteiro.
+-- Por isso `texto` é NOT NULL e `link` é nullable — e não o contrário.
+--
+-- ═══ DEDUPLICAÇÃO ═══
+--
+-- A coleta é diária e a janela se sobrepõe de propósito — buscar só "hoje"
+-- perde o que a fonte publicou com atraso. Sobreposição sem chave única vira
+-- duplicata, e duplicata em lista de prazo é ruído que faz o advogado parar de
+-- olhar. `(organization_id, djen_id)` é a chave: `djen_id` é o `id` do próprio
+-- CNJ, estável entre coletas.
+--
+-- ═══ RBAC: POR QUE NÃO TEM POLICY `ALL` SÓ-TENANCY ═══
+--
+-- A primeira versão desta migration copiou o padrão de `ai_chunks`: uma policy
+-- `for all` checando apenas `fn_user_org_ids()`. O invariante da 0150
+-- (`tests/invariants/rbac-config-ia-canais.test.ts`) reprovou, e com razão:
+--
+--     nenhuma tabela NOVA entra com policy ALL só-tenancy
+--     expected [ 'djen_oabs_monitoradas', 'djen_publicacoes' ] to deeply equal []
+--
+-- O PostgREST é exposto ao browser por construção. Policy `ALL` só-tenancy
+-- significa que o papel mais fraco do escritório escreve na tabela com o próprio
+-- JWT. Aqui isso seria: estagiário apagando publicação, ou editando o teor de
+-- uma intimação — a prova do prazo.
+--
+-- Então cada tabela recebe o tratamento que o seu uso pede:
+--
+--   `djen_publicacoes`      — SELECT para o escritório; escrita SÓ pelo coletor,
+--                             que roda com service role. `revoke` de insert,
+--                             update e delete para `authenticated` e `anon`,
+--                             no mesmo padrão que a 0160 aplicou a `ai_budgets`.
+--
+--   `djen_oabs_monitoradas` — configuração: quem decide quais OABs o escritório
+--                             acompanha é admin. SELECT para o escritório,
+--                             escrita com `fn_role_at_least(org,'admin')`.
+
+-- ── OABs que o escritório monitora ─────────────────────────────────────────
+create table if not exists public.djen_oabs_monitoradas (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid not null references public.organizations(id) on delete cascade,
+  numero           text not null,
+  uf               char(2) not null,
+  nome_advogado    text,
+  ativo            boolean not null default true,
+  created_at       timestamptz not null default now(),
+  constraint djen_oab_unica_por_org unique (organization_id, numero, uf)
+);
+
+comment on table public.djen_oabs_monitoradas is
+  'OABs cujas publicações o escritório acompanha no DJEN. A coleta itera por aqui.';
+
+-- ── publicações coletadas ──────────────────────────────────────────────────
+create table if not exists public.djen_publicacoes (
+  id                     uuid primary key default gen_random_uuid(),
+  organization_id        uuid not null references public.organizations(id) on delete cascade,
+
+  -- id do CNJ: estável entre coletas, é o que impede duplicata
+  djen_id                bigint not null,
+
+  numero_processo        text,
+  tipo_comunicacao       text,
+  sigla_tribunal         text,
+  nome_orgao             text,
+  data_disponibilizacao  date not null,
+
+  -- inteiro teor. NOT NULL de propósito: ver o cabeçalho.
+  texto                  text not null,
+  link                   text,
+
+  -- o que veio da fonte e não foi modelado, preservado como está
+  payload                jsonb not null default '{}'::jsonb,
+
+  -- Por quais OABs monitoradas esta publicação entrou. ARRAY, e não par de
+  -- colunas: a mesma publicação pode intimar DOIS advogados do escritório, e a
+  -- versão anterior guardava só o primeiro que a deduplicação encontrasse. Num
+  -- produto de prazo, quem foi intimado não é detalhe.
+  --   [{"numero":"12345","uf":"CE"}, ...]
+  oabs                   jsonb not null default '[]'::jsonb,
+
+  coletado_em            timestamptz not null default now(),
+
+  constraint djen_publicacao_unica unique (organization_id, djen_id)
+);
+
+comment on column public.djen_publicacoes.texto is
+  'Inteiro teor guardado na coleta. NOT NULL: a publicação tem de continuar legível com a API fora do ar.';
+
+create index if not exists djen_publicacoes_org_data_idx
+  on public.djen_publicacoes (organization_id, data_disponibilizacao desc);
+
+create index if not exists djen_publicacoes_processo_idx
+  on public.djen_publicacoes (organization_id, numero_processo)
+  where numero_processo is not null;
+
+-- "quais publicações são do advogado X" é a pergunta que a tela faz.
+create index if not exists djen_publicacoes_oabs_idx
+  on public.djen_publicacoes using gin (oabs);
+
+-- ── isolamento e papel ─────────────────────────────────────────────────────
+alter table public.djen_oabs_monitoradas enable row level security;
+alter table public.djen_publicacoes      enable row level security;
+
+-- limpa a versão só-tenancy da primeira tentativa
+drop policy if exists tenant_isolation_djen_oabs_monitoradas_all on public.djen_oabs_monitoradas;
+drop policy if exists tenant_isolation_djen_publicacoes_all      on public.djen_publicacoes;
+
+-- publicações: o escritório lê; ninguém escreve pelo JWT do usuário
+drop policy if exists djen_publicacoes_select on public.djen_publicacoes;
+create policy djen_publicacoes_select
+  on public.djen_publicacoes
+  for select
+  using (fn_is_platform_admin() or (organization_id in (select fn_user_org_ids())));
+
+-- OABs monitoradas: leitura para o escritório, escrita para admin
+drop policy if exists djen_oabs_monitoradas_select on public.djen_oabs_monitoradas;
+create policy djen_oabs_monitoradas_select
+  on public.djen_oabs_monitoradas
+  for select
+  using (fn_is_platform_admin() or (organization_id in (select fn_user_org_ids())));
+
+drop policy if exists djen_oabs_monitoradas_admin on public.djen_oabs_monitoradas;
+create policy djen_oabs_monitoradas_admin
+  on public.djen_oabs_monitoradas
+  for all
+  using  (fn_is_platform_admin_full() or fn_role_at_least(organization_id, 'admin'))
+  with check (fn_is_platform_admin_full() or fn_role_at_least(organization_id, 'admin'));
+
+-- SEM `anon`. Duas razões, e as duas bastam sozinhas:
+--
+-- 1. `tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts` proíbe devolver `anon`
+--    depois do bloco da varredura, e este apêndice entra depois dele.
+-- 2. `anon` é a chave que vai para o navegador. Prazo e intimação de cliente não
+--    têm caminho legítimo por ela — nem para SELECT, que a RLS filtraria mas a
+--    própria existência do grant já expõe no schema do PostgREST.
+grant all on table public.djen_oabs_monitoradas to authenticated, service_role;
+grant all on table public.djen_publicacoes      to authenticated, service_role;
+
+-- O coletor roda com service role, que passa por cima da RLS. Nenhum caminho de
+-- produto escreve publicação com o JWT do usuário — então a escrita sai da mesa
+-- em vez de depender de policy. Idempotente por natureza.
+revoke insert, update, delete, truncate on table public.djen_publicacoes from authenticated, anon;
+
+-- TRUNCATE e privilegio separado e IGNORA RLS. Sem revogar, um usuario logado
+-- apaga a prova de prazo de todos os escritorios de uma vez.
+revoke truncate on table public.djen_oabs_monitoradas from authenticated, anon;
+
+notify pgrst, 'reload schema';
+
+
+-- ---- datajud_espelho (migration 9002) ----
+-- ESTE BLOCO FICA ACIMA DA VARREDURA anon; SQL idêntico à migration da AdvTec.
+-- manifest: **A consulta fica guardada com o resultado, porque a base do CNJ muda todo dia.** Traz `datajud_recortes` (a pergunta que o escritório faz ao DataJud, com a consulta Elasticsearch exata em `jsonb`) e `datajud_processos` (o espelho do que veio, na data em que foi visto). Sem o par pergunta+data, o número que o advogado viu ontem não é reproduzível hoje — e estatística que não se reproduz não se defende. **A FK é COMPOSTA `(recorte_id, organization_id)`**, com o `unique (id, organization_id)` correspondente no pai, e não `references datajud_recortes(id)`: FK simples deixava gravar o processo do recorte do escritório A sob o `organization_id` do B, e a policy de SELECT — que filtra por `organization_id` — entregaria a linha ao inquilino errado. Num produto jurídico isso é quebra de sigilo, não bug de listagem; **medido por mutação**, com a FK simples o insert cruzado PASSA. **`data_ajuizamento_bruto` guarda a string como veio.** O CNJ devolve `YYYYMMDDHHMMSS` (medido 18/08/2026 no TJSP: `"20260629120145"`, e a fixture do repositório usava ISO — os testes ficavam verdes e o insert em `timestamptz` quebraria na primeira coleta real), e o formato **não declara fuso**: interpretamos UTC porque a coluna exige uma decisão, e a suposição não foi confirmada com o CNJ. Se estiver errada são 3 horas em toda data, e esta coluna faz a correção ser um `update` em vez de recoletar a base. **`ultimo_total` e `ultima_coleta_truncada`** existem porque `vistos` lia como "quantos processos o órgão tem" e é o tamanho da página: a spec 0007 cita órgão com 2.653.656 processos e o recorte padrão pede 500. Escrita revogada de `authenticated` e `anon` **com TRUNCATE junto** (privilégio separado, e IGNORA RLS), e o `grant` **não inclui `anon`** — a chave do navegador não tem caminho legítimo para processo de cliente, e devolvê-la depois do bloco da varredura desarma a cura no mesmo run. Isolamento, FK e grants provados contra Postgres em `tests/invariants/datajud-isolamento.test.ts`; os 18 testes de unidade do ticket **não podiam** pegar nada disso, porque o fake deles é um `Map` e `Map` não tem chave estrangeira. Idempotente: `if not exists` em tabelas e índices, `drop policy if exists` antes de cada `create policy`, e `revoke` é idempotente por natureza.
+--
+-- ═══ POR QUE ESPELHAR, EM VEZ DE CONSULTAR NA HORA ═══
+--
+-- O DataJud é um Elasticsearch público do CNJ. Chave documentada, medida em
+-- 18/08/2026 (`docs/advtec/FONTES-DE-DADOS.md`): responde, agrega, e devolve
+-- `movimentos` com data e hora — é de lá que sai desfecho e tempo de tramitação.
+--
+-- Consultar na hora, toda vez, tem um defeito que só aparece tarde: **duas
+-- perguntas iguais em dias diferentes devolvem números diferentes**, porque a
+-- base do CNJ é atualizada continuamente. Uma estatística que muda sozinha não
+-- pode ser mostrada a advogado — ele decide estratégia com ela, e depois não
+-- consegue reproduzir o número que viu.
+--
+-- Por isso o recorte é guardado com a consulta que o gerou e a data em que foi
+-- coletado. Toda estatística da spec 0007 cita esse par. É o critério de aceite
+-- 8: "toda estatística mostra o filtro que a gerou e a data da coleta".
+--
+-- ═══ O QUE NÃO SE FAZ AQUI ═══
+--
+-- Esta migration não julga dado. Data de ajuizamento em 1888 — medida, existe —
+-- entra no espelho como veio. Descartar na coleta esconderia o tamanho da
+-- sujeira; quem descarta, contando quantos descartou, é a **E2**.
+--
+-- ═══ RBAC ═══
+--
+-- Lição da 9001: o invariante da 0150 reprova tabela nova com policy `ALL`
+-- só-tenancy, e com razão — o PostgREST vai ao browser.
+--
+--   `datajud_processos` — espelho. Escrito só pelo coletor, com service role.
+--                         SELECT para o escritório; insert/update/delete
+--                         revogados de `authenticated` e `anon`.
+--   `datajud_recortes`  — configuração: qual pergunta o escritório acompanha.
+--                         SELECT para o escritório, escrita com
+--                         `fn_role_at_least(org,'admin')`.
+
+-- ── o recorte: a pergunta, guardada junto da resposta ──────────────────────
+create table if not exists public.datajud_recortes (
+  id                     uuid primary key default gen_random_uuid(),
+  organization_id        uuid not null references public.organizations(id) on delete cascade,
+
+  rotulo                 text not null,
+  tribunal               text not null,          -- ex.: 'tjsp' (o alias do índice)
+  classe_codigo          integer,
+  assunto_codigo         integer,
+  orgao_julgador_codigo  integer,
+
+  -- a consulta exata mandada ao Elasticsearch. É o que torna o número conferível.
+  consulta               jsonb not null,
+
+  ativo                  boolean not null default true,
+  ultima_coleta_em       timestamptz,
+
+  -- `hits.total` da última coleta, e se a página cortou. Sem os dois, `vistos`
+  -- parece "quantos processos o órgão tem" e é só o tamanho da página: a spec
+  -- 0007 cita órgão com 2.653.656 processos, e o espelho guarda 500.
+  ultimo_total           bigint,
+  ultima_coleta_truncada boolean not null default false,
+  created_at             timestamptz not null default now(),
+
+  constraint datajud_recorte_unico unique (organization_id, tribunal, rotulo),
+
+  -- Existe só para a tabela filha poder apontar para o PAR (id, organização).
+  -- Sem ela, `datajud_processos` conseguiria referenciar um recorte de OUTRO
+  -- escritório e a policy de SELECT entregaria o dado ao inquilino errado.
+  constraint datajud_recorte_id_org unique (id, organization_id)
+);
+
+comment on table public.datajud_recortes is
+  'A pergunta que o escritório faz ao DataJud. Guardada porque estatística sem filtro declarado não é conferível.';
+
+-- ── o espelho: os processos daquele recorte, na data em que foram vistos ───
+create table if not exists public.datajud_processos (
+  id                     uuid primary key default gen_random_uuid(),
+  organization_id        uuid not null references public.organizations(id) on delete cascade,
+  recorte_id             uuid not null,
+
+  -- `_id` do documento no índice do CNJ
+  datajud_id             text not null,
+
+  tribunal               text not null,
+  numero_processo        text,
+  grau                   text,
+  data_ajuizamento       timestamptz,
+
+  -- A string exata do CNJ, guardada ao lado da interpretada. O formato é
+  -- `YYYYMMDDHHMMSS` e **não diz o fuso**: assumimos UTC para poder gravar em
+  -- `timestamptz`, e essa suposição não foi confirmada com o CNJ. Se estiver
+  -- errada, são 3 horas em toda data, e é isto aqui que permite corrigir sem
+  -- recoletar — que é a razão de a tabela existir.
+  data_ajuizamento_bruto text,
+
+  -- 0 = público. A spec 0007 exige que só público entre em estatística; o filtro
+  -- é da E3 em diante, mas o campo tem de estar aqui para poder filtrar.
+  nivel_sigilo           integer,
+
+  orgao_julgador_codigo  integer,
+  orgao_julgador_nome    text,
+  classe_codigo          integer,
+  classe_nome            text,
+
+  assuntos               jsonb not null default '[]'::jsonb,
+  movimentos             jsonb not null default '[]'::jsonb,
+
+  coletado_em            timestamptz not null default now(),
+
+  constraint datajud_processo_unico unique (organization_id, recorte_id, datajud_id),
+
+  -- FK COMPOSTA, e não `references datajud_recortes(id)`. É o banco recusando
+  -- a mistura entre escritórios, em vez de a aplicação prometer não misturar.
+  constraint datajud_processo_recorte_fk
+    foreign key (recorte_id, organization_id)
+    references public.datajud_recortes (id, organization_id)
+    on delete cascade
+);
+
+comment on column public.datajud_processos.movimentos is
+  'Movimentação como veio do CNJ. Desfecho (Procedência, Improcedência, Parcial) sai daqui na E3.';
+comment on column public.datajud_processos.data_ajuizamento is
+  'Como veio. Datas impossíveis (medido: 1888) NÃO são descartadas aqui — a E2 descarta, contando.';
+
+create index if not exists datajud_processos_recorte_idx
+  on public.datajud_processos (organization_id, recorte_id);
+
+create index if not exists datajud_processos_orgao_idx
+  on public.datajud_processos (organization_id, orgao_julgador_codigo)
+  where orgao_julgador_codigo is not null;
+
+-- ── isolamento e papel ─────────────────────────────────────────────────────
+alter table public.datajud_recortes  enable row level security;
+alter table public.datajud_processos enable row level security;
+
+drop policy if exists datajud_recortes_select on public.datajud_recortes;
+create policy datajud_recortes_select
+  on public.datajud_recortes
+  for select
+  using (fn_is_platform_admin() or (organization_id in (select fn_user_org_ids())));
+
+drop policy if exists datajud_recortes_admin on public.datajud_recortes;
+create policy datajud_recortes_admin
+  on public.datajud_recortes
+  for all
+  using  (fn_is_platform_admin_full() or fn_role_at_least(organization_id, 'admin'))
+  with check (fn_is_platform_admin_full() or fn_role_at_least(organization_id, 'admin'));
+
+drop policy if exists datajud_processos_select on public.datajud_processos;
+create policy datajud_processos_select
+  on public.datajud_processos
+  for select
+  using (fn_is_platform_admin() or (organization_id in (select fn_user_org_ids())));
+
+-- SEM `anon`, e a razão vale para toda tabela deste produto: `anon` é a chave
+-- que vai ao navegador. Dado de processo de cliente não tem caminho legítimo
+-- por ela. Além disso `tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts`
+-- proíbe devolver `anon` depois do bloco da varredura, e este apêndice entra
+-- depois dele — o grant desarmava a cura no mesmo run.
+grant all on table public.datajud_recortes  to authenticated, service_role;
+grant all on table public.datajud_processos to authenticated, service_role;
+
+-- Espelho é escrito só pelo coletor (service role, que passa por cima da RLS).
+-- Nenhum caminho de produto escreve processo com o JWT do usuário.
+revoke insert, update, delete, truncate on table public.datajud_processos from authenticated, anon;
+revoke truncate on table public.datajud_recortes from authenticated, anon;
+
+notify pgrst, 'reload schema';
+
+
+-- ---- djen_registro_de_coleta (migration 9003) ----
+-- ESTE BLOCO FICA ACIMA DA VARREDURA anon; SQL idêntico à migration da AdvTec.
+-- manifest: **O alarme precisa de memória do que rodou.** A spec 0006 chama a E6 de bloqueante — "coleta sem alarme de falha é pior que não ter coleta, porque cria confiança sem lastro" — e o critério 7 exige aviso em até 1 hora. **Uma TABELA, e não um campo de "última coleta":** o perigo real não é a coleta falhar (falha aparece), é ela PARAR DE RODAR e ninguém notar — o escritório abre a tela, vê a lista de ontem e conclui que hoje não houve publicação. Para distinguir "não houve publicação" de "não houve coleta" é preciso saber que a coleta ACONTECEU, e um campo de última-vez apaga a tentativa que falhou. `ok` nasce `false` de propósito: processo morto no meio deixa a linha em falso, que é a verdade, e não em "sem informação". `alarme_enviado_em` é o que impede avisar de hora em hora sobre a mesma falha — o critério pede avisar EM até 1 hora, não avisar TODA hora, e alarme que ninguém lê é igual a alarme que não existe. Índice parcial `where ok` porque a pergunta do alarme é "qual foi a última coleta boa desta organização". Escrita revogada de `authenticated` e `anon` com TRUNCATE junto: sem ele um usuário logado apaga o histórico e o alarme passa a achar que a coleta nunca rodou. `grant` **sem `anon`** (chave do navegador; e devolver `anon` depois do bloco da varredura desarma a cura no mesmo run). **O envio do alarme NÃO está aqui** — a migration guarda o fato e a marca de que o aviso saiu; por onde ele sai é decisão de produto. Idempotente: `if not exists`, `drop policy if exists`, e `revoke` por natureza.
+--
+-- A spec 0006 diz, com todas as letras: "E6 sobe junto de E1 em produção. Coleta
+-- sem alarme de falha é pior que não ter coleta, porque cria confiança sem
+-- lastro." O critério 7 exige alarme em até 1 hora.
+--
+-- ═══ POR QUE UMA TABELA, E NÃO UM CAMPO ═══
+--
+-- O perigo real não é a coleta falhar — falha aparece. É a coleta **parar de
+-- rodar** e ninguém notar: o escritório continua abrindo a tela, vê a lista de
+-- ontem, e conclui que não houve publicação nenhuma. Silêncio parece calmaria.
+--
+-- Para distinguir "não houve publicação" de "não houve coleta" é preciso saber
+-- que a coleta ACONTECEU. Isso é um registro de execuções, e não um campo de
+-- "última vez" — que some a informação da tentativa que falhou.
+--
+-- ═══ O QUE NÃO ESTÁ AQUI ═══
+--
+-- O envio do alarme. Esta migration guarda o fato e a marca de que o aviso saiu;
+-- por onde ele sai (e-mail, WhatsApp, painel) é decisão de produto e vive fora.
+
+create table if not exists public.djen_coletas (
+  id                     uuid primary key default gen_random_uuid(),
+  organization_id        uuid not null references public.organizations(id) on delete cascade,
+
+  iniciada_em            timestamptz not null default now(),
+  terminada_em           timestamptz,
+
+  -- `false` até a coleta terminar bem. Nasce falso de propósito: processo morto
+  -- no meio deixa a linha em falso, que é a verdade — e não em "sem informação".
+  ok                     boolean not null default false,
+
+  oabs_consultadas       integer not null default 0,
+  publicacoes_vistas     integer not null default 0,
+  gravadas               integer not null default 0,
+
+  -- [{"oab":"12345/CE","motivo":"HTTP 503"}, ...]
+  falhas                 jsonb not null default '[]'::jsonb,
+
+  -- Quando o alarme desta coleta foi disparado. NULL = ainda não avisamos.
+  -- É o que impede avisar de hora em hora sobre a mesma falha.
+  alarme_enviado_em      timestamptz
+);
+
+comment on table public.djen_coletas is
+  'Registro de execuções da coleta do DJEN. Existe para o alarme saber que a coleta PAROU, e não só que ela falhou.';
+
+create index if not exists djen_coletas_org_inicio_idx
+  on public.djen_coletas (organization_id, iniciada_em desc);
+
+-- A pergunta do alarme é "qual foi a última coleta OK desta organização".
+create index if not exists djen_coletas_org_ok_idx
+  on public.djen_coletas (organization_id, iniciada_em desc)
+  where ok;
+
+-- ── isolamento e papel ─────────────────────────────────────────────────────
+alter table public.djen_coletas enable row level security;
+
+drop policy if exists djen_coletas_select on public.djen_coletas;
+create policy djen_coletas_select
+  on public.djen_coletas
+  for select
+  using (fn_is_platform_admin() or (organization_id in (select fn_user_org_ids())));
+
+-- SEM `anon`. Este apêndice entra depois do bloco da varredura, e devolver
+-- `anon` ali desarma a cura no mesmo run — além de `anon` ser a chave que vai
+-- ao navegador, que não tem o que fazer com o histórico de coleta do escritório.
+grant all on table public.djen_coletas to authenticated, service_role;
+
+-- Escrita só pelo coletor, que roda com service role. TRUNCATE junto: é
+-- privilégio separado e IGNORA RLS — sem revogar, um usuário logado apaga o
+-- histórico inteiro e o alarme passa a achar que a coleta nunca rodou.
+revoke insert, update, delete, truncate on table public.djen_coletas from authenticated, anon;
+
+notify pgrst, 'reload schema';
+
+-- ---- AdvTec: publicação descartada como "não é nossa" (migration 9005) ----
+-- ESTE BLOCO FICA ACIMA DA VARREDURA anon; SQL idêntico à migration da AdvTec.
+alter table public.djen_publicacoes add column if not exists descartada_em timestamptz;
+alter table public.djen_publicacoes add column if not exists descartada_por uuid references auth.users(id) on delete set null;
+alter table public.djen_publicacoes add column if not exists descartada_motivo text;
+
+-- Descarte é tudo ou nada: data e motivo andam juntos. `descartada_por` pode
+-- ficar nulo depois (usuário removido), por isso fica fora da regra.
+alter table public.djen_publicacoes drop constraint if exists djen_publicacao_descarte_completo;
+alter table public.djen_publicacoes add constraint djen_publicacao_descarte_completo check (
+  (descartada_em is null and descartada_motivo is null)
+  or (descartada_em is not null and length(btrim(descartada_motivo)) between 3 and 300)
+);
+
+notify pgrst, 'reload schema';
+
+-- ---- AdvTec: prazo confirmado pelo advogado (migration 9006) ----
+-- ESTE BLOCO FICA ACIMA DA VARREDURA anon; SQL idêntico à migration da AdvTec.
+alter table public.djen_publicacoes add column if not exists prazo_vence_em date;
+alter table public.djen_publicacoes add column if not exists prazo_confirmado_em timestamptz;
+alter table public.djen_publicacoes add column if not exists prazo_confirmado_por uuid references auth.users(id) on delete set null;
+alter table public.djen_publicacoes add column if not exists prazo_observacao text;
+
+-- Confirmação é tudo ou nada: a data final e o momento da confirmação andam
+-- juntos. `prazo_confirmado_por` pode ficar nulo depois (usuário removido), por
+-- isso fica fora da regra. A observação é curta e opcional.
+alter table public.djen_publicacoes drop constraint if exists djen_publicacao_prazo_confirmado_completo;
+alter table public.djen_publicacoes add constraint djen_publicacao_prazo_confirmado_completo check (
+  ((prazo_vence_em is null) = (prazo_confirmado_em is null))
+  and (prazo_observacao is null or length(prazo_observacao) <= 300)
+);
+
+-- A pauta lê À PARTE os prazos confirmados a partir do corte do vencido, por
+-- escritório, para nenhum cair fora pelo teto das publicações recentes.
+create index if not exists djen_publicacoes_prazo_idx
+  on public.djen_publicacoes (organization_id, prazo_vence_em)
+  where prazo_vence_em is not null;
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria

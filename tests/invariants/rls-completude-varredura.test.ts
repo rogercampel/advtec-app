@@ -75,6 +75,12 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  // ── AdvTec (fork) ──
+  { tabela: "djen_oabs_monitoradas", razao: "tests/invariants/djen-isolamento.test.ts: authenticated + JWT de A lê linhas próprias, zero de B, recusa insert em B; anon não lê." },
+  { tabela: "djen_publicacoes", razao: "tests/invariants/djen-isolamento.test.ts: authenticated + JWT de A lê linhas próprias, zero de B, recusa insert em B; anon não lê." },
+  { tabela: "djen_coletas", razao: "tests/invariants/djen-isolamento.test.ts: authenticated + JWT de A lê linhas próprias, zero de B, recusa insert em B; anon não lê." },
+  { tabela: "datajud_recortes", razao: "tests/invariants/datajud-isolamento.test.ts: authenticated + JWT de A lê linhas próprias, zero de B, recusa insert em B; anon não lê." },
+  { tabela: "datajud_processos", razao: "tests/invariants/datajud-isolamento.test.ts: authenticated + JWT de A lê linhas próprias, zero de B, recusa insert em B; anon não lê." },
   { tabela: "jev_router_decisions", razao: "tests/invariants/jev-roteador-decisoes.test.ts — dois tenants por JWT: leitura local, zero do vizinho; anon sem leitura, authenticated sem escrita; poda com piso no banco." },
   { tabela: "golden_candidates", razao: "tests/invariants/golden-candidates.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
   { tabela: "jev_observacoes", razao: "tests/invariants/jev-observacoes.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },

@@ -186,6 +186,11 @@ __pycache__/
 # Runtime do instalador single-server: Supabase self-hosted, credenciais e dados.
 .runtime/
 
+# PDF gerado a partir do HTML, nao versionado
+comercial/*.pdf
+
+# Verbatim local do /salve; o contexto curado continua versionado.
+.context/raw/
 # Ponto de extensão do Caddy (#2724): o operador solta aqui os arquivos .caddy
 # dos serviços extras que quer publicar no MESMO VPS, e o `import` no fim dos
 # dois Caddyfiles os publica sem que ninguém edite arquivo versionado.
@@ -198,3 +203,14 @@ __pycache__/
 # compose não tem de onde nascer).
 caddy-sites/*
 !caddy-sites/README.caddy
+
+# AdvTec: material de negócio, specs e caderno ficam no repositório privado
+/comercial/
+/.context/
+/specs/
+/docs/advtec/
+/pesquisa-vertical-advocacia.md
+/PRODUCT.md
+/CONTEXT.md
+/docs/agents/issue-tracker.md
+/.claude/commands/onda.md

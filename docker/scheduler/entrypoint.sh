@@ -139,6 +139,13 @@ CRONS="
 # pagar, e a diferença entre nascer às 5h ou às 17h não muda nada para quem paga.
 # Barato: uma consulta por instalação, e quem não tem molde nenhum sai na hora.
 50 5 * * *|60|api/v1/cron/recurring-entries
+# AdvTec (fork): A BUSCA DE INTIMACOES (spec 0009.E1). De hora em hora pelo ALARME,
+# que precisa avisar em ate 1 hora; a coleta em si roda uma vez por dia por
+# escritorio, e a hora seguinte tenta de novo quando falha. Minuto 29, longe das
+# outras varreduras horarias.
+29 * * * *|180|api/v1/cron/djen-coleta
+# AdvTec (fork), spec 0009.E5: resumo da manhã às 7h de Brasília (10h UTC).
+0 10 * * *|180|api/v1/cron/djen-resumo
 "
 
 # CRONTAB_PATH é ponto de injeção do teste (tests/shell/scheduler-entrypoint.test.sh).

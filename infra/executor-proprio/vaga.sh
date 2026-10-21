@@ -45,6 +45,7 @@ while true; do
     --name "deskcomm-vaga-${VAGA}" \
     --cpus "$CPUS" --memory "$MEMORIA" \
     -e JIT_CONFIG="$cfg" \
+    -e DESKCOMM_REPO_ESPERADO="$REPO" \
     "$IMAGEM"
   echo "vaga ${VAGA}: ${nome} terminou (código $?)"
   sleep 2

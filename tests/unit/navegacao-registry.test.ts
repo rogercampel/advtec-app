@@ -181,6 +181,9 @@ describe("hubSections", () => {
       "/app/contacts",
       "/app/companies",
       "/app/people",
+      "/app/publicacoes",
+      "/app/acervo",
+      "/app/juizo",
       "/app/tasks",
       // #1752: os planos caem embaixo de Tarefas, NA MESMA seção — um plano é
       // rotina do dia, não preparação nem fechamento. `sidebar: false` deixa o

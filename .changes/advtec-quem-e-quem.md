@@ -1,0 +1,7 @@
+---
+impacto: nada_mudou
+secao: adicionado
+titulo: Quem é quem na leitura do processo, e a linha do tempo sem jurisprudência citada
+---
+
+AdvTec (fork), spec 0003.E2 (#29). `lib/acervo/quem-e-quem.ts` extrai da capa da inicial o juízo, o autor, a classe (o nome da ação como a peça escreve) e o réu; dos autos, o valor da causa (o último que aparece) e os advogados com a OAB. Cada campo traz a página e o trecho literal; o que não está escrito no formato esperado sai vazio, nunca um palpite: autor, classe e réu só saem de petição inicial, nome quebrado em duas linhas sai vazio, e dois valores da causa diferentes nos autos deixam o valor vazio para o advogado dizer qual vale. Nas duas iniciais públicas reais usadas para desenhar as regras (TJMG e MPRJ), os 10 campos batem com o gabarito feito à mão; a validação de verdade é a do piloto. Na mesma medição, a linha do tempo (0003.E3) passou a deixar de fora as datas de julgado e de lei citados, contadas em `citacoes`; antes elas apareciam como fatos do caso. O corte exige evidência local ("j.", "DJe" ou "Data do Julgamento" junto de referência a tribunal, parênteses de citação, "Lei nº…, de"): na dúvida a data fica, porque citação que passa aparece com o trecho e o advogado vê, e fato descartado some. O tipo da peça reconhece "vem propor:" e o endereçamento "EXMO.", e a data por extenso aceita "27 janeiro de 2006". Sem migration e sem variável de ambiente nova.

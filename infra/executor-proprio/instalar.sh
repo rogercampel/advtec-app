@@ -15,6 +15,9 @@
 # repositório EXECUTOR_PROPRIO valer `ligado` (tutorial: pasta de decisões, doc 39).
 set -euo pipefail
 
+# Fork: `DESKCOMM_REPO=dono/repo sudo -E bash instalar.sh`. Sem a variável, o original.
+REPO="${DESKCOMM_REPO:-melgarafael/DeskcommCRM}"
+
 DIR="$(cd "$(dirname "$0")" && pwd)"
 CONF=/etc/deskcomm-executor
 DESTINO=/opt/deskcomm-executor
@@ -78,9 +81,9 @@ fi
 # Confere o token AGORA, em vez de descobrir pelo log de uma vaga parada.
 codigo=$(curl -s -o /dev/null -w '%{http_code}' \
   -H "Authorization: Bearer $(cat "$CONF/token")" \
-  "https://api.github.com/repos/melgarafael/DeskcommCRM/actions/runners")
+  "https://api.github.com/repos/${REPO}/actions/runners")
 [ "$codigo" = 200 ] || falha "o token não lê os runners do repositório (HTTP ${codigo}). Confira a permissão Administration."
-echo "melgarafael/DeskcommCRM" > "$CONF/repo"
+echo "$REPO" > "$CONF/repo"
 
 nucleos=$(nproc)
 memoria_gb=$(awk '/MemTotal/ {printf "%d", $2/1024/1024}' /proc/meminfo)
@@ -154,6 +157,6 @@ systemctl enable --now deskcomm-executor-atualizar.timer
 
 echo
 echo "==> pronto: ${vagas} vaga(s) ligada(s)."
-echo "Confira em https://github.com/melgarafael/DeskcommCRM/settings/actions/runners"
+echo "Confira em https://github.com/${REPO}/settings/actions/runners"
 echo "(cada vaga aparece como deskcomm-vaga-N-<hora>, status Idle)."
 echo "Logs de uma vaga: journalctl -u deskcomm-vaga@1 -f"

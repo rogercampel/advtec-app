@@ -1,0 +1,2 @@
+UPSTREAM_PIN=277f9c04026bd0c6555a93b1df60a417c5fa1361
+# atualizar a base = decisao consciente: git fetch upstream && git merge <novo-sha>

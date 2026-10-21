@@ -6,14 +6,14 @@ project_id = "deskcomm-crm"
 
 [api]
 enabled = true
-port = 54321
+port = 64321
 schemas = ["public", "storage", "graphql_public"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
 [db]
-port = 54322
-shadow_port = 54320
+port = 64322
+shadow_port = 64320
 
 # pg15 = o PISO que prometemos suportar, e é o servidor que o contribuidor pega
 # ao rodar `supabase start` — o mesmo que o job `invariants` do CI mede por
@@ -30,7 +30,7 @@ major_version = 15
 
 [db.pooler]
 enabled = false
-port = 54329
+port = 64329
 pool_mode = "transaction"
 default_pool_size = 20
 max_client_conn = 100
@@ -40,12 +40,12 @@ enabled = true
 
 [studio]
 enabled = true
-port = 54323
+port = 64323
 api_url = "http://127.0.0.1:54321"
 
 [inbucket]
 enabled = true
-port = 54324
+port = 64324
 
 [storage]
 enabled = true

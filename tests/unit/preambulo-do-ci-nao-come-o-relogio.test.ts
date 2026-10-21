@@ -205,8 +205,12 @@ describe("o preâmbulo do CI não come o orçamento dos testes", () => {
     const re = /^ {2}([A-Za-z0-9_-]+):\s*$/gm;
     for (const m of texto.matchAll(re)) {
       const corpo = texto.slice(m.index! + m[0].length, m.index! + m[0].length + 400);
-      const teto = corpo.match(/^ {4}timeout-minutes:\s*(\d+)\s*$/m);
-      if (teto) achados[`ci.yml::${m[1]!}`] = Number(teto[1]);
+      // AdvTec (fork): o teto pode vir de variável do repositório; aí a catraca
+      // guarda o PADRÃO escrito na expressão — o valor do original.
+      const teto = corpo.match(
+        /^ {4}timeout-minutes:\s*(?:(\d+)|\$\{\{ fromJSON\(vars\.\w+ \|\| '(\d+)'\) \}\})\s*$/m,
+      );
+      if (teto) achados[`ci.yml::${m[1]!}`] = Number(teto[1] ?? teto[2]);
     }
 
     // Controle positivo: o regex tem de achar os dois jobs de ci.yml.
@@ -230,8 +234,10 @@ describe("o preâmbulo do CI não come o orçamento dos testes", () => {
     // e o invariante "orçamento < teto" ser uma consulta direta. O hífen precisa
     // entrar na classe: `\w` não o casa, e regex que deixa de casar é o modo de
     // falha que o controle de vivacidade abaixo existe para pegar.
-    const re = /name: Orçamento de tempo do ([\w-]+)\n(?:.*\n)*?\s+ORCAMENTO_MIN: "(\d+)"/g;
-    for (const m of texto.matchAll(re)) achados[`ci.yml::${m[1]!}`] = Number(m[2]!);
+    // AdvTec (fork): idem — `${{ vars.X || 'N' }}` guarda N, o padrão do original.
+    const re =
+      /name: Orçamento de tempo do ([\w-]+)\n(?:.*\n)*?\s+ORCAMENTO_MIN: (?:"(\d+)"|\$\{\{ vars\.\w+ \|\| '(\d+)' \}\})/g;
+    for (const m of texto.matchAll(re)) achados[`ci.yml::${m[1]!}`] = Number(m[2] ?? m[3]);
 
     // Controle de VIVACIDADE: sem ele, um regex que deixasse de casar daria verde
     // por vacuidade — é o modo de falha que derrubou duas entregas em 18/09.

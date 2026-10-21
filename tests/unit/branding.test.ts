@@ -841,6 +841,15 @@ type CategoriaDeHost =
 type EntradaDeHost = { categoria: CategoriaDeHost; motivo: string };
 
 const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
+  // ── AdvTec (fork): fontes públicas do Judiciário ──
+  "api-publica.datajud.cnj.jus.br": {
+    categoria: "FORNECEDOR",
+    motivo: "API pública do DataJud (CNJ), lida por lib/datajud/api.ts para espelhar metadados de processo.",
+  },
+  "comunicaapi.pje.jus.br": {
+    categoria: "FORNECEDOR",
+    motivo: "API de comunicações do DJEN (PJe/CNJ), lida por lib/djen/comunica.ts para coletar publicações por OAB.",
+  },
   "chatgpt.com": {
     categoria: "CONSOLE",
     motivo:

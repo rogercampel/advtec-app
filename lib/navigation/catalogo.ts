@@ -284,6 +284,38 @@ export const NAV_CATALOG = [
     modulo: "crm_b2b",
   },
   {
+    // AdvTec (fork) — spec 0009. As intimações do DJEN e a caixa das que não
+    // casam com caso nenhum. Fica só no hub do CRM: o menu lateral está no teto
+    // da dobra a 1280x900 (tests/unit/interface-por-empresa.test.ts).
+    // Sem `minRole`: `viewer` vê; agir é cobrado pelas rotas (`agent`).
+    href: "/app/publicacoes",
+    label: "Publicações",
+    description: "Intimações do DJEN das OABs do escritório — e as que ainda não foram ligadas a um caso.",
+    icon: "ScalesSimple",
+    group: "crm",
+    section: "O dia a dia da venda",
+  },
+  {
+    // AdvTec (fork), issue #90: pesquisa de tese no acervo do escritório (spec 0004).
+    // Só no hub, como Publicações: o menu lateral está no teto. Sem `minRole`:
+    // `viewer` abre a tela; pesquisar é `agent`, cobrado pela rota.
+    href: "/app/acervo",
+    label: "Pesquisa no acervo",
+    description: "Argumentos que o escritório já usou, com a peça e a página de cada trecho e o desfecho dos processos.",
+    icon: "BookOpen",
+    group: "crm",
+    section: "O dia a dia da venda",
+  },
+  {
+    // AdvTec (fork), issue #91: perfil do juízo pelo espelho do DataJud (spec 0007).
+    href: "/app/juizo",
+    label: "Perfil do juízo",
+    description: "Como um órgão julgador vem decidindo e quanto demora, ao lado dos demais do tribunal, sempre com o número de processos.",
+    icon: "ChartBar",
+    group: "crm",
+    section: "O dia a dia da venda",
+  },
+  {
     // Extraída do PR #418 (@clinicacentrodosorrisosc-code). Fica no CRM e no
     // sidebar porque é tela de USO DIÁRIO — quem atende abre para ver o que
     // vence hoje, do mesmo jeito que abre o Inbox. Sem `minRole`: `viewer` VÊ
