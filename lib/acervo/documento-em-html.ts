@@ -7,9 +7,11 @@
  * do modelo passa por `escapa` — o documento é HTML montado no servidor, e trecho
  * de autos não pode virar marcação.
  *
- * O que o documento mostra de toda afirmação: a frase, "p. N" e o trecho
- * literal entre aspas. A frase é leitura do modelo; o trecho é dos autos; a
- * página é onde conferir.
+ * O que o documento mostra de toda afirmação: a frase e "p. N" — sempre — e o
+ * trecho literal entre aspas quando ele diz algo além da frase. Quem é quem e
+ * advogados não repetem o trecho (o valor já é literal), nem a linha do tempo
+ * (o evento é o próprio trecho). A frase é leitura do modelo; o trecho é dos
+ * autos; a página é onde conferir.
  */
 import type { Afirmacao, DocumentoDeLeitura } from "./documento-de-leitura";
 

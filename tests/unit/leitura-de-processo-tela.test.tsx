@@ -47,8 +47,8 @@ describe("critério 7: a estimativa vem antes da leitura", () => {
     render(<LeituraDeProcesso podeLer leituras={[]} />);
     expect(screen.queryByRole("button", { name: "Ler o processo" })).toBeNull();
     escolhe();
-    await waitFor(() => expect(screen.getByTestId("estimativa").textContent).toMatch(/34 páginas · cerca de 2 min/));
-    expect(screen.getByTestId("estimativa").textContent).toMatch(/US\$ 0\.00 pela chave de API/);
+    await waitFor(() => expect(screen.getByTestId("estimativa").textContent).toMatch(/34 páginas com texto · cerca de 2 min/));
+    expect(screen.getByTestId("estimativa").textContent).toMatch(/cerca de US\$ 0\.00 se for pela chave de API.*usa a chave da organização/);
     expect(enviados[0]!.get("confirmar")).toBeNull();
     expect(screen.getByRole("button", { name: "Ler o processo" })).toBeTruthy();
   });
@@ -67,6 +67,17 @@ describe("critério 7: a estimativa vem antes da leitura", () => {
     render(<LeituraDeProcesso podeLer leituras={[]} />);
     escolhe();
     expect(await screen.findByText("Folhas digitalizadas sem texto não serão lidas: 7, 8.")).toBeTruthy();
+  });
+});
+
+describe("PDF acima de 10 MB", () => {
+  it("é recusado na tela, sem envio — o proxy do Next o entregaria cortado", async () => {
+    render(<LeituraDeProcesso podeLer leituras={[]} />);
+    const grande = new File(["%PDF"], "grande.pdf", { type: "application/pdf" });
+    Object.defineProperty(grande, "size", { value: 10 * 1024 * 1024 + 1 });
+    fireEvent.change(screen.getByLabelText(/PDF do processo/), { target: { files: [grande] } });
+    expect((await screen.findByRole("alert")).textContent).toMatch(/10 MB/);
+    expect(enviados).toHaveLength(0);
   });
 });
 

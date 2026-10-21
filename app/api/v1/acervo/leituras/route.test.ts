@@ -51,7 +51,7 @@ const LEITURA = "44444444-4444-4444-8444-444444444444";
 const PDF = new TextEncoder().encode("%PDF-1.7 conteúdo");
 const PAGINAS = [{ numero: 1, texto: "EXMO. SR. DR. JUIZ DE DIREITO DA 1ª VARA CÍVEL. FULANO DE TAL, brasileiro, vem propor a presente AÇÃO DE COBRANÇA." }];
 
-type Cap = { insert?: Record<string, unknown>; updates: Array<{ patch: Record<string, unknown>; filtros: Array<[string, unknown]> }> };
+type Cap = { insert?: Record<string, unknown>; updates: Array<{ patch: Record<string, unknown>; filtros: Array<[string, unknown]> }>; erroNoUpdate?: string };
 
 function banco(cap: Cap) {
   vi.mocked(createAdminClient).mockReturnValue({
@@ -63,7 +63,8 @@ function banco(cap: Cap) {
       update: (patch: Record<string, unknown>) => {
         const u = { patch, filtros: [] as Array<[string, unknown]> };
         cap.updates.push(u);
-        const chain = { eq: (c: string, v: unknown) => (u.filtros.push([c, v]), chain) };
+        const erro = cap.updates.length === 1 && cap.erroNoUpdate ? { message: cap.erroNoUpdate } : null;
+        const chain = { eq: (c: string, v: unknown) => (u.filtros.push([c, v]), chain), then: (ok: (r: unknown) => unknown) => ok({ error: erro }) };
         return chain;
       },
     }),
@@ -175,6 +176,23 @@ describe("leitura de processo", () => {
     expect(cap.updates[0]!.filtros).toContainEqual(["organization_id", ORG]);
   });
 
+  it("documento que o banco recusa não deixa a linha 'lendo': termina 'falhou', com o motivo", async () => {
+    vi.mocked(executaLeitura).mockResolvedValue({ aviso: "x" } as never);
+    cap.erroNoUpdate = "unsupported Unicode escape sequence";
+    await envia({ arquivo: pdf(), confirmar: "1" });
+    await tarefas[0]!();
+    expect(cap.updates.map((u) => u.patch.estado)).toEqual(["pronta", "falhou"]);
+    expect(cap.updates[1]!.patch.motivo_da_falha).toMatch(/não foi gravado: unsupported Unicode/);
+  });
+
+  it("corpo acima de 10 MB é recusado pelo cabeçalho, antes de ler — o proxy do Next o entregaria cortado", async () => {
+    const req = new NextRequest("http://x/api/v1/acervo/leituras", { method: "POST", body: "x", headers: { "content-length": String(10 * 1024 * 1024 + 1) } });
+    const r = await POST(req);
+    expect(r.status).toBe(422);
+    expect(((await r.json()) as { error: { message: string } }).error.message).toMatch(/10 MB/);
+    expect(cap.insert).toBeUndefined();
+  });
+
   it("muitas leituras seguidas: 429, nada gravado", async () => {
     vi.mocked(checkRateLimit).mockResolvedValueOnce({ allowed: false } as never);
     expect((await envia({ arquivo: pdf(), confirmar: "1" })).status).toBe(429);
@@ -183,7 +201,7 @@ describe("leitura de processo", () => {
 });
 
 /*
- * Mutações (21/10/2026): 10 de 10 acusadas. Sem recusar escaneado (o leitor lança `sem_texto`); sem o passo
+ * Mutações (21/10/2026): 12 de 12 acusadas (+ erro do update ignorado; sem o limite pelo cabeçalho). Sem recusar escaneado (o leitor lança `sem_texto`); sem o passo
  * da estimativa; organização do corpo; atualização sem filtro de organização;
  * sem conferir que é PDF; sem limite de frequência; sem a guarda de suporte; sem
  * checar o papel; folhas escaneadas do meio fora da leitura; motivo da falha

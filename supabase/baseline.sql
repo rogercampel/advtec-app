@@ -56235,7 +56235,8 @@ create policy acervo_leituras_select
   using (fn_is_platform_admin() or (organization_id in (select fn_user_org_ids())));
 
 grant all on table public.acervo_leituras to authenticated, service_role;
-revoke insert, update, delete, truncate on table public.acervo_leituras from authenticated, anon;
+revoke insert, update, delete, truncate on table public.acervo_leituras from authenticated;
+revoke all on table public.acervo_leituras from anon;
 
 notify pgrst, 'reload schema';
 

@@ -3,9 +3,9 @@
  * própria, sem o menu do app, para imprimir ou salvar em PDF (spec 0003.E6: "uma
  * página só, legível, imprimível").
  *
- * Lê com a SESSÃO: a RLS da `acervo_leituras` (migration 9007) só devolve a
- * leitura do escritório de quem pede — outro escritório recebe 404, nunca o
- * documento. Ver é `viewer`: ler o documento não gasta nada.
+ * Lê com a SESSÃO e filtra pela organização ativa: o filtro explícito é a barreira
+ * (a RLS da migration 9007 libera tudo ao admin da plataforma); outro escritório
+ * recebe 404, nunca o documento. Ver é `viewer`: ler o documento não gasta nada.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -48,7 +48,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
       // O documento traz trecho de processo de cliente: nada de script, nada de terceiro.
-      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'",
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; frame-ancestors 'none'",
       "X-Request-Id": requestId,
     },
   });

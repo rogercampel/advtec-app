@@ -20,6 +20,13 @@ const { pecas } = JSON.parse(readFileSync("tests/fixtures/leitura-luna-gravada.j
   pecas: Record<"tjmg" | "mprj", Gravada>;
 };
 
+describe("sem nenhum bloco lido não há documento", () => {
+  it("modelo recusando todas as chamadas: a leitura falha com o motivo, não sai 'pronta' vazia", async () => {
+    const paginas: Pagina[] = [{ numero: 1, texto: "O autor alega que pagou a quantia devida em janeiro e nada recebeu em troca do réu." }];
+    await expect(executaLeitura(paginas, async () => { throw new Error("403 access_denied"); })).rejects.toThrow(/nenhum bloco foi lido.*403/);
+  });
+});
+
 describe("critério 7: a estimativa sai antes, sem modelo", () => {
   it("custo pela chave de API cresce com o processo, e 34 páginas custam menos de um centavo de dólar", async () => {
     const pequeno = await estimaCusto(pecas.mprj.paginas);

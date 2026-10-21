@@ -14,7 +14,7 @@ import { leAlegacoes } from "./alegacoes";
 import { itensDosAutos, leContradicoes } from "./contradicoes";
 import { montaDocumento, type DocumentoDeLeitura } from "./documento-de-leitura";
 import type { Pagina } from "./fatiar";
-import { estimaLeitura, MODELO_DA_LEITURA, type ChamadaDoModelo } from "./leitura-por-modelo";
+import { estimaLeitura, MODELO_DA_LEITURA, paginasParaLeitura, type ChamadaDoModelo } from "./leitura-por-modelo";
 import { linhaDoTempo } from "./linha-do-tempo";
 import { quemEQuem } from "./quem-e-quem";
 
@@ -39,12 +39,21 @@ export async function estimaCusto(paginas: Pagina[]): Promise<EstimativaDaLeitur
   const { precoDoModelo } = await import("@/lib/agent-engine/edge/llm/pricing");
   const preco = precoDoModelo(MODELO_DA_LEITURA);
   const dolaresPelaChave = preco ? (entrada * preco.input + entrada * SAIDA_POR_ENTRADA * preco.output) / 1_000_000 : null;
+  // ponytail: contradições estimadas num valor fixo; o pedido real cresce com os itens achados — por isso a tela diz "cerca de", não "até".
   return { paginas: paginas.length, tokens, blocos, minutos, dolaresPelaChave };
 }
 
 export async function executaLeitura(paginas: Pagina[], chamar: ChamadaDoModelo): Promise<DocumentoDeLeitura> {
   const linha = linhaDoTempo(paginas);
   const alegacoes = await leAlegacoes(paginas, chamar);
+  // Os leitores guardam a falha de cada bloco no documento. Se NENHUM bloco foi
+  // lido (assinatura recusada, chave sem saldo), não há documento: é falha, não
+  // um "pronta" vazio.
+  const naoLidas = new Set(alegacoes.blocosNaoLidos.flatMap((b) => Array.from({ length: b.ultima - b.primeira + 1 }, (_, i) => b.primeira + i)));
+  const { comTexto } = paginasParaLeitura(paginas);
+  if (comTexto.length > 0 && comTexto.every((p) => naoLidas.has(p.numero))) {
+    throw new Error(`nenhum bloco foi lido pelo modelo: ${alegacoes.blocosNaoLidos[0]?.motivo ?? "sem motivo"}`);
+  }
   const contradicoes = await leContradicoes(itensDosAutos(alegacoes.alegacoes, linha.eventos), chamar);
   return montaDocumento({ quemEQuem: quemEQuem(paginas), linhaDoTempo: linha, alegacoes, contradicoes });
 }

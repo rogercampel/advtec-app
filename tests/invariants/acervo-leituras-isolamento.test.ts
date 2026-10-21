@@ -106,6 +106,13 @@ describe("critério 8: a leitura de um escritório nunca aparece para outro", ()
   it("anon não lê nada", () => {
     expect(sqlDeveFalhar("set role anon; select count(*) from public.acervo_leituras;")).toMatch(/permission denied/i);
   });
+
+  it("anon não tem privilégio nenhum na tabela — a recusa acima não depende da função da policy", () => {
+    expect(
+      sql(`select string_agg(p, ',') from unnest(array['select','insert','update','delete','truncate','references','trigger']) p
+           where has_table_privilege('anon', 'public.acervo_leituras', p);`),
+    ).toBe("");
+  });
 });
 
 describe("a tela nunca mostra resultado parcial como final", () => {

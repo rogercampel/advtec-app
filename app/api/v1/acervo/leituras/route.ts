@@ -32,7 +32,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-const TAMANHO_MAXIMO = 40 * 1024 * 1024; // 40 MB: um processo de 400 páginas digitais cabe com folga
+/**
+ * 10 MB, e não mais: o proxy do Next corta o corpo em 10 MB
+ * (`proxyClientMaxBodySize`) SEM erro — acima disso o multipart chega truncado e
+ * `formData()` falha. Subir o teto exige mudar o `next.config` do upstream.
+ */
+const TAMANHO_MAXIMO = 10 * 1024 * 1024;
 /** Leitura é cara em tempo: poucas por pessoa por hora. */
 const TETO_POR_USUARIO = 6;
 const JANELA_SEGUNDOS = 3600;
@@ -46,6 +51,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
+  // Pelo cabeçalho, antes de ler o corpo: o corpo acima do teto já chega cortado.
+  if (Number(req.headers.get("content-length") ?? 0) > TAMANHO_MAXIMO) {
+    return fail("validation_failed", t("O PDF passa de 10 MB. Envie o processo em partes."), 422, { requestId });
+  }
   let form: FormData;
   try {
     form = await req.formData();
@@ -55,7 +64,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const arquivo = form.get("arquivo");
   if (!(arquivo instanceof File)) return fail("invalid_request", t("Nenhum arquivo foi enviado."), 400, { requestId });
   if (arquivo.size > TAMANHO_MAXIMO) {
-    return fail("validation_failed", t("O PDF passa de 40 MB. Envie o processo em partes."), 422, { requestId });
+    return fail("validation_failed", t("O PDF passa de 10 MB. Envie o processo em partes."), 422, { requestId });
   }
   const bytes = new Uint8Array(await arquivo.arrayBuffer());
   if (!(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) {
@@ -103,14 +112,22 @@ export async function POST(req: NextRequest): Promise<Response> {
   after(async () => {
     try {
       const documento = await executaLeitura(comVazias, chamadaPelaAssinatura(getRequestPool(), orgId));
-      await admin.from("acervo_leituras").update({ estado: "pronta", documento, updated_at: new Date().toISOString() }).eq("id", linha.id).eq("organization_id", orgId);
+      // O supabase-js devolve o erro em vez de lançar: sem conferir, a linha ficaria 'lendo' para sempre.
+      const { error: naoGravou } = await admin
+        .from("acervo_leituras")
+        .update({ estado: "pronta", documento, updated_at: new Date().toISOString() })
+        .eq("id", linha.id)
+        .eq("organization_id", orgId);
+      if (naoGravou) throw new Error(`o documento não foi gravado: ${naoGravou.message}`);
     } catch (e) {
       logger.error("[acervo-leitura] a leitura falhou", { requestId, leitura_id: linha.id, motivo: motivoDaFalha(e) });
-      await admin
+      const { error: nemAFalha } = await admin
         .from("acervo_leituras")
         .update({ estado: "falhou", motivo_da_falha: motivoDaFalha(e).slice(0, 300), updated_at: new Date().toISOString() })
         .eq("id", linha.id)
         .eq("organization_id", orgId);
+      // Resta a tela: 'lendo' antigo aparece como interrompida (app/app/leitura/page.tsx).
+      if (nemAFalha) logger.error("[acervo-leitura] nem a falha foi gravada", { requestId, leitura_id: linha.id, motivo: nemAFalha.message });
     }
   });
 

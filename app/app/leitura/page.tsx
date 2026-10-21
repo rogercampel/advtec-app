@@ -16,6 +16,25 @@ export const metadata: Metadata = { title: "Leitura de processo" };
  * Lê a lista com a sessão (RLS recorta a organização). Ler um processo gasta
  * modelo: `agent` em diante, como a pesquisa no acervo — e a rota cobra de novo.
  */
+/**
+ * Leitura 'lendo' há mais que isto foi interrompida (o servidor reiniciou no meio,
+ * ou nem a falha foi gravada): a tela a mostra como falha, e para de se atualizar.
+ * 400 páginas estimam ~10 min; uma hora é folga.
+ */
+const LENDO_NO_MAXIMO_MS = 60 * 60 * 1000;
+
+function naLista(l: { id: string; nome_do_arquivo: string; total_de_paginas: number; estado: string; motivo_da_falha: string | null; created_at: string }): LeituraNaLista {
+  const interrompida = l.estado === "lendo" && Date.now() - Date.parse(l.created_at) > LENDO_NO_MAXIMO_MS;
+  return {
+    id: l.id,
+    arquivo: l.nome_do_arquivo,
+    paginas: l.total_de_paginas,
+    estado: interrompida ? "falhou" : (l.estado as LeituraNaLista["estado"]),
+    motivo: interrompida ? "a leitura foi interrompida; envie o PDF de novo" : l.motivo_da_falha,
+    criadaEm: l.created_at,
+  };
+}
+
 export default async function LeituraPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
@@ -30,13 +49,6 @@ export default async function LeituraPage() {
     .order("created_at", { ascending: false })
     .limit(30);
 
-  const leituras: LeituraNaLista[] = (data ?? []).map((l) => ({
-    id: l.id,
-    arquivo: l.nome_do_arquivo,
-    paginas: l.total_de_paginas,
-    estado: l.estado as LeituraNaLista["estado"],
-    motivo: l.motivo_da_falha,
-    criadaEm: l.created_at,
-  }));
+  const leituras = (data ?? []).map(naLista);
   return <LeituraDeProcesso podeLer={podeLer} leituras={leituras} />;
 }

@@ -33,6 +33,8 @@ type Fase =
   | { fase: "enviando"; estimativa: Estimativa }
   | { fase: "erro"; mensagem: string };
 
+/** O mesmo teto da rota: o proxy do Next corta o corpo em 10 MB. */
+const TAMANHO_MAXIMO = 10 * 1024 * 1024;
 /** Enquanto houver leitura em andamento, a lista se atualiza sozinha. */
 const ATUALIZA_A_CADA_MS = 10_000;
 
@@ -63,6 +65,7 @@ export function LeituraDeProcesso({ podeLer, leituras }: { podeLer: boolean; lei
     const f = e.target.files?.[0] ?? null;
     setArquivo(f);
     if (!f) return setEstado({ fase: "parado" });
+    if (f.size > TAMANHO_MAXIMO) return setEstado({ fase: "erro", mensagem: t("O PDF passa de 10 MB. Envie o processo em partes.") });
     setEstado({ fase: "estimando" });
     const r = await envia(f, false);
     setEstado(r.ok ? { fase: "estimado", estimativa: r.data.estimativa } : { fase: "erro", mensagem: r.mensagem || t("Não foi possível ler este PDF.") });
@@ -92,7 +95,7 @@ export function LeituraDeProcesso({ podeLer, leituras }: { podeLer: boolean; lei
           {t("Novo processo")}
         </h2>
         <label className="block space-y-1 text-sm">
-          <span className="block">{t("PDF do processo (até 40 MB)")}</span>
+          <span className="block">{t("PDF do processo (até 10 MB)")}</span>
           <input
             type="file"
             accept="application/pdf"
@@ -106,9 +109,9 @@ export function LeituraDeProcesso({ podeLer, leituras }: { podeLer: boolean; lei
         {(estado.fase === "estimado" || estado.fase === "enviando") && (
           <div className="space-y-3" data-testid="estimativa">
             <p className="text-sm tabular-nums">
-              {t("{p} páginas · cerca de {m} min").replace("{p}", String(estado.estimativa.paginas)).replace("{m}", String(estado.estimativa.minutos))}
+              {t("{p} páginas com texto · cerca de {m} min").replace("{p}", String(estado.estimativa.paginas)).replace("{m}", String(estado.estimativa.minutos))}
               {estado.estimativa.dolaresPelaChave !== null &&
-                ` · ${t("até US$ {d} pela chave de API (pela assinatura do ChatGPT, conta no limite de uso)").replace("{d}", estado.estimativa.dolaresPelaChave.toFixed(2))}`}
+                ` · ${t("cerca de US$ {d} se for pela chave de API (pela assinatura do ChatGPT, conta no limite de uso; se a assinatura falhar, usa a chave da organização)").replace("{d}", estado.estimativa.dolaresPelaChave.toFixed(2))}`}
             </p>
             {estado.estimativa.paginasSemTexto.length > 0 && (
               <p className="text-sm text-amber-800">
