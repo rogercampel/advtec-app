@@ -316,6 +316,17 @@ export const NAV_CATALOG = [
     section: "O dia a dia da venda",
   },
   {
+    // AdvTec (fork), issue #41: leitura de processo volumoso (spec 0003.E6). Só no
+    // hub, como as outras telas do acervo. Sem `minRole`: `viewer` vê as leituras;
+    // ler um processo novo é `agent`, cobrado pela rota.
+    href: "/app/leitura",
+    label: "Leitura de processo",
+    description: "Envie o PDF do processo e receba quem é quem, a linha do tempo, o que cada lado alega e as páginas para ler — tudo com a página dos autos.",
+    icon: "FileText",
+    group: "crm",
+    section: "O dia a dia da venda",
+  },
+  {
     // Extraída do PR #418 (@clinicacentrodosorrisosc-code). Fica no CRM e no
     // sidebar porque é tela de USO DIÁRIO — quem atende abre para ver o que
     // vence hoje, do mesmo jeito que abre o Inbox. Sem `minRole`: `viewer` VÊ
