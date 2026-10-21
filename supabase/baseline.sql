@@ -56192,6 +56192,54 @@ create index if not exists djen_publicacoes_prazo_idx
 
 notify pgrst, 'reload schema';
 
+-- ---- AdvTec: leitura de processo guardada (migration 9007) ----
+-- ESTE BLOCO FICA ACIMA DA VARREDURA anon; SQL idêntico à migration da AdvTec.
+create table if not exists public.acervo_leituras (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  criada_por uuid references auth.users(id) on delete set null,
+  nome_do_arquivo text not null,
+  total_de_paginas integer not null,
+  estado text not null default 'lendo',
+  documento jsonb,
+  motivo_da_falha text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.acervo_leituras drop constraint if exists acervo_leitura_estado_valido;
+alter table public.acervo_leituras add constraint acervo_leitura_estado_valido check (
+  estado in ('lendo', 'pronta', 'falhou')
+  and length(nome_do_arquivo) between 1 and 255
+  and total_de_paginas >= 0
+  and (motivo_da_falha is null or length(motivo_da_falha) <= 300)
+);
+
+-- Pronta tem documento; falhou tem motivo e não tem documento; lendo não tem nenhum dos dois.
+alter table public.acervo_leituras drop constraint if exists acervo_leitura_pronta_tem_documento;
+alter table public.acervo_leituras add constraint acervo_leitura_pronta_tem_documento check (
+  (estado = 'pronta' and documento is not null and motivo_da_falha is null)
+  or (estado = 'falhou' and documento is null and motivo_da_falha is not null)
+  or (estado = 'lendo' and documento is null and motivo_da_falha is null)
+);
+
+-- A tela lista as leituras do escritório, da mais nova para a mais velha.
+create index if not exists acervo_leituras_org_idx on public.acervo_leituras (organization_id, created_at desc);
+
+alter table public.acervo_leituras enable row level security;
+
+drop policy if exists acervo_leituras_select on public.acervo_leituras;
+create policy acervo_leituras_select
+  on public.acervo_leituras
+  for select
+  using (fn_is_platform_admin() or (organization_id in (select fn_user_org_ids())));
+
+grant all on table public.acervo_leituras to authenticated, service_role;
+revoke insert, update, delete, truncate on table public.acervo_leituras from authenticated;
+revoke all on table public.acervo_leituras from anon;
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
