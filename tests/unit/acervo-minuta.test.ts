@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Buscador } from "@/lib/acervo/busca-por-problema";
-import { AVISO_DA_MINUTA, citacoesNaMinuta, escreveMinuta, MARCA_DA_CITACAO_RETIRADA, SEM_BASE, type Minuta } from "@/lib/acervo/minuta";
+import { AVISO_DA_MINUTA, escreveMinuta, FALTOU_JURISPRUDENCIA, MARCA_DO_RETIRADO, SEM_BASE, unidades, type Minuta } from "@/lib/acervo/minuta";
+import { citacoesDe } from "@/lib/acervo/trava-da-tese";
 
 /**
  * Ticket 0005.E1 (#33) — minuta a partir do acervo.
@@ -75,8 +76,10 @@ describe("sobre a resposta real do Luna", () => {
     const m = await minuta(gravada.respostas.citacao_forcada);
     if (m.situacao !== "minuta") throw new Error(m.situacao);
     expect(tudo(m)).not.toMatch(/1\.?999\.?999|s[uú]mula\s*(n[oº.]?\s*)?999/i);
-    expect(citacoesNaMinuta(m)).toEqual([]);
-    expect(m.removidas.citacao_externa).toBeGreaterThan(0);
+    expect(m.blocos.flatMap((b) => citacoesDe(b.texto))).toEqual([]);
+    expect(m.removidas.numero_sem_apoio + m.removidas.julgado_sem_apoio).toBeGreaterThan(0);
+    // A marca fica no lugar e não sobra colchete órfão do "[A COMPLETAR: inserir o REsp …]" do modelo.
+    for (const b of m.blocos) expect(b.texto.split("[").length).toBe(b.texto.split("]").length);
   });
 });
 
@@ -109,19 +112,94 @@ describe("o que o código garante, sem depender do modelo", () => {
     expect(m.removidas.fonte_inexistente).toBe(2);
   });
 
-  it("citação externa: a frase sai, o lugar fica marcado e vira item do que faltou (critério 4)", async () => {
-    const m = await minuta(JSON.stringify({ blocos: [{ texto: "A cláusula é nula. Assim decidiu o REsp 1.234.567/SP.", fontes: ["T1"] }], faltou: [] }));
+  it("citação externa: a frase sai, a marca fica NO LUGAR dela, e o que faltou diz por quê (critério 4)", async () => {
+    const m = await minuta(JSON.stringify({ blocos: [{ texto: "A cláusula é nula. Assim decidiu o REsp 1.234.567/SP. Por isso, deve ser afastada.", fontes: ["T1"] }], faltou: [] }));
     if (m.situacao !== "minuta") throw new Error(m.situacao);
-    expect(m.blocos[0]!.texto).toBe(`A cláusula é nula. ${MARCA_DA_CITACAO_RETIRADA}`);
+    expect(m.blocos[0]!.texto).toBe(`A cláusula é nula. ${MARCA_DO_RETIRADO} Por isso, deve ser afastada.`);
     expect(tudo(m)).not.toMatch(/1\.?234\.?567/);
-    expect(m.faltou).toContain("Bloco 1: jurisprudência que o acervo do escritório não tem.");
+    expect(m.faltou).toContain(FALTOU_JURISPRUDENCIA);
   });
 
-  it("citação que ESTÁ no trecho do acervo fica", async () => {
+  // As formas que a primeira versão (uma lista de siglas) deixava passar — achadas pelo segundo leitor.
+  it.each([
+    ["REsp n.º 1.999.999/SP", "Conforme o REsp n.º 1.999.999/SP, a cláusula é nula."],
+    ["REsp. com ponto", "Conforme o REsp. 1.999.999, a cláusula é nula."],
+    ["Recurso Especial por extenso", "Decidiu-se no Recurso Especial número 1999999 que a cláusula é nula."],
+    ["Tema", "Aplica-se o Tema 1.234 do STJ."],
+    ["EAREsp", "Ver EAREsp 123.456."],
+    ["súmulas no plural", "Incidem as Súmulas 297 e 479."],
+    ["Rcl", "Na Rcl 12.345 ficou assentado o contrário."],
+    ["número CNJ solto", "No processo 1234567-89.2020.8.26.0100 a tese foi acolhida."],
+    ["OJ", "Aplica-se a OJ 394 da SDI-1."],
+    ["Informativo", "Consta do Informativo 700."],
+    ["precedente sem número", "Em precedente da Terceira Turma do STJ, de relatoria da Min. Nancy Andrighi, a cláusula foi anulada."],
+    ["tribunal sem número", "O STJ, em recurso repetitivo, pacificou que a cláusula é nula."],
+    ["Rel. e j. no meio", "REsp 1.999.999/SP, Rel. Min. Nancy Andrighi, j. 10/10/2021, DJe 15/10/2021: a cláusula é nula."],
+    ["súmula com número do acervo, mas de outro tribunal", "Aplica-se a Súmula Vinculante 7."],
+  ])("%s não passa, e nada do julgado sobra no texto", async (_, frase) => {
+    const hits = [{ ...HITS[0]!, content: "A cláusula arbitral em contrato de adesão é nula. Súmula 7 do STJ." }];
+    const m = await minuta(JSON.stringify({ blocos: [{ texto: "A cláusula arbitral em contrato de adesão é nula.", fontes: ["T1"] }, { texto: frase, fontes: ["T1"] }], faltou: [] }), buscador(hits));
+    if (m.situacao !== "minuta") throw new Error(m.situacao);
+    expect(m.blocos[1]!.texto).toBe(MARCA_DO_RETIRADO);
+  });
+
+  it("o resto do julgado inventado não fica atribuído ao acervo: 'Nesse julgado, a Corte afirmou…' sai junto", async () => {
+    const m = await minuta(JSON.stringify({ blocos: [{ texto: "Do mérito.", fontes: ["T1"] }, { texto: "O STJ julgou o REsp 1.999.999/SP. Nesse julgado, a Corte afirmou que a cláusula arbitral é nula.", fontes: ["T1"] }], faltou: [] }));
+    expect(tudo(m)).not.toMatch(/Nesse julgado|1\.?999/);
+  });
+
+  it("citação partida em dois blocos não passa", async () => {
+    const m = await minuta(JSON.stringify({ blocos: [{ texto: "Do mérito.", fontes: ["T1"] }, { texto: "Conforme decidiu o STJ no REsp", fontes: ["T1"] }, { texto: "1.999.999/SP, a cláusula é nula.", fontes: ["T1"] }], faltou: [] }));
+    expect(tudo(m)).not.toMatch(/STJ no REsp|1\.?999/);
+  });
+
+  it("número inventado no que faltou também sai", async () => {
+    const m = await minuta(JSON.stringify({ blocos: [{ texto: "Do mérito.", fontes: ["T1"] }], faltou: ["Falta juntar o acórdão do Tema 1.234 do STJ e do processo 1234567-89.2020.8.26.0100.", "Qualificação das partes."] }));
+    if (m.situacao !== "minuta") throw new Error(m.situacao);
+    expect(m.faltou).toEqual(["Qualificação das partes.", FALTOU_JURISPRUDENCIA]);
+  });
+
+  it("minuta inteira sem apoio no acervo é 'sem base', mesmo que o modelo a escreva (critério 3)", async () => {
+    const tudoNovo = await minuta(JSON.stringify({ blocos: [{ texto: "CONTESTAÇÃO TRABALHISTA.", fontes: [] }, { texto: "Das horas extras.", fontes: [] }], faltou: [] }));
+    expect(tudoNovo).toMatchObject({ situacao: "sem_base" });
+    const soLacunas = await minuta(JSON.stringify({ blocos: [{ texto: "Conforme o REsp n.º 1.999.999/SP.", fontes: ["T1"] }], faltou: [] }));
+    expect(soLacunas).toMatchObject({ situacao: "sem_base" });
+  });
+
+  it("frase da peça do acervo com a citação, copiada como está, fica", async () => {
+    const hits = [{ ...HITS[0]!, content: "Nesse sentido, o STJ fixou no REsp 1.234.567/SP que a cláusula é nula." }];
+    const m = await minuta(JSON.stringify({ blocos: [{ texto: "Nesse sentido, o STJ fixou no REsp 1.234.567/SP que a cláusula é nula.", fontes: ["T1"] }], faltou: [] }), buscador(hits));
+    if (m.situacao !== "minuta") throw new Error(m.situacao);
+    expect(m.blocos[0]!.texto).toContain("REsp 1.234.567/SP");
+  });
+
+  it("número do bloco conferido contra a fonte DELE: valor que só existe noutro trecho não passa", async () => {
+    const hits = [{ ...HITS[0]!, content: "Dos fatos do caso." }, { ...HITS[1]!, content: "O valor da causa é R$ 19.500.000,00." }];
+    const m = await minuta(JSON.stringify({ blocos: [{ texto: "Dos fatos.", fontes: ["T1"] }, { texto: "O dano foi de R$ 19.500.000,00.", fontes: ["T1"] }], faltou: [] }), buscador(hits));
+    if (m.situacao !== "minuta") throw new Error(m.situacao);
+    expect(m.blocos[1]!.texto).toBe(MARCA_DO_RETIRADO);
+  });
+
+  it("título numerado e a ré não são confundidos com citação", async () => {
+    const m = await minuta(JSON.stringify({ blocos: [{ texto: "1. DOS FATOS. A ré impôs a cláusula.", fontes: ["T1"] }], faltou: [] }));
+    if (m.situacao !== "minuta") throw new Error(m.situacao);
+    expect(m.blocos[0]!.texto).toBe("1. DOS FATOS. A ré impôs a cláusula.");
+  });
+
+  it("as unidades: abreviatura de citação não corta a frase, e o colchete vai inteiro", () => {
+    expect(unidades("REsp 1/SP, Rel. Min. Fulana, j. 10/10/2021. Outra frase. [A COMPLETAR: x. Y] Fim.")).toEqual([
+      "REsp 1/SP, Rel. Min. Fulana, j. 10/10/2021.",
+      "Outra frase.",
+      "[A COMPLETAR: x. Y]",
+      "Fim.",
+    ]);
+  });
+
+  it("citação do acervo PARAFRASEADA não passa (falha fechado: só a frase copiada fica)", async () => {
     const hits = [{ ...HITS[0]!, content: "Conforme o REsp 1.234.567/SP, a cláusula é nula." }];
     const m = await minuta(JSON.stringify({ blocos: [{ texto: "Nos termos do REsp 1.234.567/SP, a cláusula é nula.", fontes: ["T1"] }], faltou: [] }), buscador(hits));
     if (m.situacao !== "minuta") throw new Error(m.situacao);
-    expect(m.blocos[0]!.texto).toContain("REsp 1.234.567/SP");
+    expect(m.blocos[0]!.texto).toBe(MARCA_DO_RETIRADO);
   });
 
   it("modelo dizendo que os trechos não servem: 'sem base', com o motivo", async () => {
