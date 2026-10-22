@@ -5,6 +5,7 @@ import { wahaPayloadSchema, type WahaPayload } from "@/lib/waha/envelope";
 import { bodyOf, dataDoTimestamp, mediaFilenameOf, mediaMimeOf, resolveMessageType } from "@/lib/waha/ingest";
 import { bareWaMessageId } from "@/lib/waha/message-id";
 import { ackToStatus } from "@/lib/types/messaging";
+import { logger } from "@/lib/logger";
 
 /**
  * AdvTec: IMPORTAR SOB DEMANDA o histórico de UMA conversa do WhatsApp.
@@ -194,7 +195,15 @@ export async function importarHistoricoDaConversa(
     for (const chatId of enderecos) brutos = brutos.concat(await tudoDoEndereco(waha, sessao, chatId));
     const semNove = chatIdSemNonoDigito(doCadastro);
     if (brutos.length === 0 && semNove) brutos = await tudoDoEndereco(waha, sessao, semNove);
-  } catch {
+  } catch (erro) {
+    // A tela diz "o servidor do WhatsApp não respondeu"; o log guarda o porquê, para
+    // quem for diagnosticar (auditoria de 22/10/2026: antes a causa sumia). Sem
+    // telefone nem conteúdo: só ids e a mensagem do erro.
+    logger.warn("[waha] histórico: o canal não respondeu", {
+      organizationId,
+      conversationId,
+      erro: erro instanceof Error ? erro.message : String(erro),
+    });
     return { ok: false, motivo: "canal_indisponivel" };
   }
 
