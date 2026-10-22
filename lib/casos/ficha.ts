@@ -16,6 +16,7 @@
  *     mensagem literal, com a data; quando não acende, não conclui nada.
  */
 import { detectUrgencySignal } from "@/lib/agent-engine/guardrails/sinal-de-urgencia";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 /** Onde a triagem jurídica vai gravar a área e o resumo no caso. Contrato: renomear esconde o que já foi gravado. */
 export const CAMPO_DA_AREA = "area_do_direito";
@@ -90,7 +91,7 @@ export function montaFicha(args: {
   const noHistorico = ordenadas.slice(-MENSAGENS_NA_FICHA);
   const deCliente = (m: MensagemDaFicha) => m.direction === "inbound";
 
-  const nome = contato ? (contato.display_name?.trim() || contato.name?.trim() || null) : null;
+  const nome = nomeDoContato(contato);
   const ativos = args.compromissos.filter((c) => c.status !== "cancelled");
 
   return {

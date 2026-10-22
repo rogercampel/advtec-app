@@ -26,9 +26,10 @@ const ficha = (over: Partial<Parameters<typeof montaFicha>[0]> = {}) =>
   montaFicha({ caso: caso(), contato, mensagens: [], compromissos: [], agora: AGORA, ...over });
 
 describe("quem, área e resumo — sem palpite", () => {
-  it("quem vem do contato do caso (nome de exibição antes do nome)", () => {
+  it("quem vem do contato do caso, pela régua da casa (`nomeDoContato`: nome antes do perfil do WhatsApp)", () => {
     expect(ficha().quem).toEqual({ nome: "Maria Souza", telefone: "+5586999990000" });
-    expect(ficha({ contato: { ...contato, display_name: "Dona Maria" } }).quem?.nome).toBe("Dona Maria");
+    expect(ficha({ contato: { ...contato, display_name: "Dona Maria" } }).quem?.nome).toBe("Maria Souza");
+    expect(ficha({ contato: { ...contato, name: null, display_name: "Dona Maria" } }).quem?.nome).toBe("Dona Maria");
     expect(ficha({ contato: null }).quem).toBeNull();
   });
 
