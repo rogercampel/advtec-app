@@ -30,7 +30,7 @@ beforeEach(() => {
   filtros.length = 0;
   visivel = true;
   vi.mocked(requireSupportWrite).mockResolvedValue(null);
-  vi.mocked(requireRole).mockResolvedValue({ ok: true, user: { id: "u1", idioma: "pt" }, org: { orgId: ORG, role: "agent" } } as Awaited<ReturnType<typeof requireRole>>);
+  vi.mocked(requireRole).mockResolvedValue({ ok: true, user: { id: "u1", idioma: "pt" }, org: { orgId: ORG, role: "agent" } } as unknown as Awaited<ReturnType<typeof requireRole>>);
   const q = {
     select: () => q,
     eq: (k: string, v: unknown) => { filtros.push([k, v]); return q; },

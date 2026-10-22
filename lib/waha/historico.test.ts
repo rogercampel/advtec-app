@@ -153,7 +153,7 @@ describe("importarHistoricoDaConversa", () => {
     expect(wahaVazio.listarMensagensDoChat.mock.calls.map((c) => c[1])).toEqual(["5586999990000@c.us", "558699990000@c.us"]);
 
     const achou = bancada();
-    const wahaAchou = { listarMensagensDoChat: vi.fn(async () => [msg({})]) };
+    const wahaAchou = { listarMensagensDoChat: vi.fn(async (_s: string, _c: string) => [msg({})]) };
     await importarHistoricoDaConversa(achou.admin, wahaAchou, "org-a", "conv-1");
     expect(wahaAchou.listarMensagensDoChat.mock.calls.map((c) => c[1])).toEqual(["5586999990000@c.us"]);
   });
