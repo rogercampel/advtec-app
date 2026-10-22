@@ -274,6 +274,26 @@ describe("0005.E3 — frase inteira que, sozinha, troca quem afirma", () => {
     expect(frasesInteirasDe(frase, texto)).toBe(false);
   });
 
+  // Revisão Sonnet da E3: o que a primeira versão recusava sem motivo.
+  it.each([
+    ["frase que termina em 'Ltda.'", "A ré é Netflix Ltda.", "Do caso. A ré é Netflix Ltda. A ré contestou. Fim."],
+    ["a frase depois de 'Ltda.'", "A ré contestou.", "Do caso. A ré é Netflix Ltda. A ré contestou. Fim."],
+    ["frase que termina em 'S.A.'", "A ré é Netflix S.A.", "Do caso. A ré é Netflix S.A. A ré contestou. Fim."],
+    ["frase que termina em 'art. 5º.'", "A multa decorre do art. 5º.", "Do caso. A multa decorre do art. 5º. A ré contestou. Fim."],
+    ["depois de título 'ANEXO A'", "A ação é cabível.", "Do caso.\nANEXO A\nA ação é cabível. Fim."],
+    ["depois de título que termina em palavra com acento ('ÓRGÃOS': o \\b veria o conectivo 'os')", "A ação é cabível.", "Do caso.\nDA COMPETÊNCIA DOS ÓRGÃOS\nA ação é cabível. Fim."],
+    ["depois de linha que termina em 'Ltda.'", "A ré contestou.", "Do caso. Contra a Netflix Ltda.\nA ré contestou. Fim."],
+  ])("%s: é frase inteira", (_, frase, texto) => {
+    expect(frasesInteirasDe(frase, texto)).toBe(true);
+  });
+
+  it.each([
+    ["'Ltda.' no meio da frase (minúscula depois) não fecha", "e contestou.", "Do caso. A Netflix Ltda. e contestou. Fim."],
+    ["letra solta antes de maiúscula continua sem fechar (inicial de nome)", "Silva, para quem a cláusula é válida.", "Do caso. Vencido o Min. J. Silva, para quem a cláusula é válida. Fim."],
+  ])("%s", (_, frase, texto) => {
+    expect(frasesInteirasDe(frase, texto)).toBe(false);
+  });
+
   it.each([
     ["a frase inteira, desde antes dos dois-pontos", "Alega a ré: o consumidor não tem direito à devolução.", "Do caso. Alega a ré: o consumidor não tem direito à devolução. Fim."],
     ["a frase com 'S.A.' no meio", "Alegação da Netflix S.A. de que a multa é devida.", "Do caso. Alegação da Netflix S.A. de que a multa é devida. Fim."],
