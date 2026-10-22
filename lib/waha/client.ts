@@ -567,6 +567,21 @@ export class WahaClient {
   }
 
   /**
+   * AdvTec: uma página do histórico guardado de UM chat (store do NOWEB), sem
+   * baixar mídia. Medido em 22/10/2026 (WAHA local, NOWEB): a mesma forma do
+   * `payload` do webhook; MAIS NOVAS primeiro, e `offset` anda para o passado
+   * (27 mensagens em páginas de 10: 10+10+7, sem repetir nem faltar); `@c.us` e
+   * `@s.whatsapp.net` dão o mesmo; chat que não existe devolve `[]`, não erro.
+   */
+  async listarMensagensDoChat(session: string, chatId: string, limite = 500, offset = 0): Promise<unknown[]> {
+    const url = `${this.baseUrl}/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages?limit=${limite}&offset=${offset}&downloadMedia=false`;
+    const res = await this.fetchComTeto(url, { headers: { "X-Api-Key": this.apiKey } });
+    if (!res.ok) throw new Error(`waha_chat_messages_${res.status}`);
+    const bruto = (await res.json().catch(() => null)) as unknown;
+    return Array.isArray(bruto) ? bruto : [];
+  }
+
+  /**
    * Liga ou desliga o recebimento de grupos NESTA sessão. Só devolve `true` quando o GET
    * seguinte confirma a troca: o WAHA já respondeu 200 para operação que não aconteceu
    * (medido na issue melgarafael/DeskcommCRM#1428).

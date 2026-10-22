@@ -56,6 +56,12 @@ export interface ChannelCapabilities {
   costPerMessage: boolean;
   /** O atendente pode editar e apagar para todos uma mensagem já enviada. */
   alteraMensagemEnviada: boolean;
+  /**
+   * AdvTec: o canal guarda o histórico anterior à conexão e o entrega sob demanda
+   * (`lib/channels/historico-do-canal.ts`). Os canais da Cloud API não têm de onde
+   * tirar mensagem antiga: a API só entrega o que chega pelo webhook.
+   */
+  importaHistorico: boolean;
 }
 
 /**

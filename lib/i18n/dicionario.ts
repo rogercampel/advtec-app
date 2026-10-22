@@ -16294,6 +16294,16 @@ export const DICIONARIO: Traducoes = {
   "Confirmar prazo": { es: "Confirmar plazo" },
   "Data final, conferida no seu controle": { es: "Fecha final, verificada en tu control" },
   "Observação (opcional)": { es: "Observación (opcional)" },
+  // AdvTec — histórico do WhatsApp sob demanda
+  "Buscando no WhatsApp…": { es: "Buscando en WhatsApp…" },
+  "Buscar mensagens anteriores no WhatsApp": { es: "Buscar mensajes anteriores en WhatsApp" },
+  "O WhatsApp não tem mensagens guardadas deste contato.": { es: "WhatsApp no tiene mensajes guardados de este contacto." },
+  "Tudo o que o WhatsApp guardou deste contato já está aqui.": { es: "Todo lo que WhatsApp guardó de este contacto ya está aquí." },
+  "Mensagens trazidas do WhatsApp:": { es: "Mensajes traídos de WhatsApp:" },
+  "O histórico de grupo não é importado por aqui.": { es: "El historial de grupo no se importa desde aquí." },
+  "Esta conversa não está ligada a um número de WhatsApp conectado.": { es: "Esta conversación no está vinculada a un número de WhatsApp conectado." },
+  "O contato não tem número de WhatsApp para buscar o histórico.": { es: "El contacto no tiene número de WhatsApp para buscar el historial." },
+  "O servidor do WhatsApp não respondeu. Tente de novo em instantes.": { es: "El servidor de WhatsApp no respondió. Intente de nuevo en unos instantes." },
   // AdvTec 0001.E4 — ficha do caso
   "Caso sem título": { es: "Caso sin título" },
   "Fichas dos casos": { es: "Fichas de los casos" },
