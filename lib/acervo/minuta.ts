@@ -5,26 +5,30 @@
  * linguagem das peças dele. O que o código garante, e não o modelo:
  *
  *   - sem trecho no acervo, não há minuta e o modelo nem é chamado (critério 3).
- *     Minuta em que nenhum bloco se apoia num trecho também é "sem base";
+ *     Minuta em que o modelo não apoia nenhum bloco num trecho também é "sem
+ *     base". Se havia base e a trava retirou texto, a minuta sai com as marcas —
+ *     cada uma diz por quê; "sem base" ali seria mentira;
  *   - `fontes` de um bloco são os trechos que o MODELO diz ter usado. O código
  *     confere que existem — não que o argumento está neles. Sem fonte, o bloco
  *     sai marcado como texto novo (critério 2);
  *   - CITAÇÃO SÓ PELO ACERVO (decisão do dono, 21/10/2026). Reconhecer citação em
- *     texto livre não fecha: duas travas por regra foram derrubadas pelo segundo
- *     leitor, para os dois lados. Então o modelo não escreve citação — escreve
- *     `[CITA T3: "frase copiada do trecho"]`, e o código só a põe na minuta se a
- *     frase estiver, literal, naquele trecho, com documento e página.
- *     O texto PRÓPRIO do modelo não pode ter cara de citação: frase com
- *     algarismo (fora a numeração de seção), com tribunal, súmula, precedente,
- *     relator, verbo de julgamento ("decidiu", "assentou") ou número por extenso
- *     vira a marca, no lugar dela — a menos que a frase inteira (6+ palavras)
- *     esteja escrita num trecho. Custa lacunas (até "art. 300 do CPC" fora de
- *     citação vira lacuna); é o preço escolhido;
+ *     texto livre não fecha: três revisões derrubaram travas por regra, para os
+ *     dois lados. Então o modelo não escreve citação — escreve
+ *     `[CITA T3: "frase"]`, e o código só a põe na minuta, entre aspas e com
+ *     documento e página, se ela for UMA OU MAIS FRASES INTEIRAS daquele trecho.
+ *     Frase inteira, e não pedaço: pedaço deixava passar "Súmula 30" tirado de
+ *     "Súmula 302" e a tese sem o "Não" que a negava;
+ *   - o texto PRÓPRIO do modelo é uma rede, não a garantia: frase com algarismo
+ *     (fora a numeração de seção) ou com cara de citação (`LINHAS_DE_CITACAO`)
+ *     vira a marca, no lugar — a menos que seja cópia de frases inteiras do
+ *     acervo. Nome de peça ("apelação cível"), endereçamento ("Egrégio
+ *     Tribunal", "Desembargador Relator") e "julgado procedente" passam;
  *   - a minuta declara que é rascunho (critério 7), e termina com o que faltou,
  *     que passa pela mesma regra.
  *
- * Limite conhecido, para a E3: nome de magistrado sem título e sem verbo de
- * julgamento ("Fulana entende que…") não é reconhecido.
+ * Limite declarado, para a E3: atribuição a pessoa só pelo nome, sem título nem
+ * tribunal ("como decidiu Fulana"). Pegá-la pela palavra "decidiu" cortava "a ré
+ * decidiu cancelar o contrato".
  *
  * O acervo é o da organização de quem pede: a busca recorta por `organizationId`
  * (critério 9), e o modelo só vê os trechos que ela devolveu.
@@ -45,9 +49,6 @@ export const FALTOU_RETIRADOS =
 
 /** Mais trechos que a pesquisa (8): a minuta precisa de estrutura, não só do argumento. */
 export const TRECHOS_DA_MINUTA = 12;
-/** Frase do modelo que é cópia do acervo passa — mas só com tamanho para não ser prefixo de outra citação. */
-export const PALAVRAS_PARA_SER_COPIA = 6;
-export const PALAVRAS_DA_CITACAO = { minimo: 3, maximo: 80 } as const;
 
 export type FonteDaMinuta = { id: string; citacao: string; processo: string | null };
 export type BlocoDaMinuta = {
@@ -60,9 +61,9 @@ export type RemovidasDaMinuta = {
   fonte_inexistente: number;
   /** Algarismo no texto próprio do modelo. */
   numero_no_texto: number;
-  /** Tribunal, súmula, precedente, relator, verbo de julgamento, número por extenso. */
+  /** Uma das `LINHAS_DE_CITACAO`, ou letra de outro alfabeto. */
   cara_de_citacao: number;
-  /** `[CITA …]` com trecho que não existe ou frase que não está nele. */
+  /** `[CITA …]` com trecho que não existe, ou frase que não é frase inteira dele. */
   cita_invalida: number;
   bloco_vazio: number;
 };
@@ -85,7 +86,7 @@ Regras:
 - Siga a estrutura e a linguagem desses trechos: é o jeito de escrever deste escritório.
 - Divida a minuta em blocos (um parágrafo ou um título de seção cada).
 - Em "fontes", liste os trechos em que o bloco se apoia. Bloco escrito sem apoio em trecho leva "fontes": [].
-- CITAÇÃO: para citar julgado, súmula, lei, artigo, doutrina ou qualquer número, copie a frase do trecho, palavra por palavra, assim: [CITA T3: "frase copiada do trecho"]. É a ÚNICA forma de citar. Fora dela, não escreva algarismo, número de processo ou recurso, nome de tribunal, súmula, tema, data ou valor.
+- CITAÇÃO: para citar julgado, súmula, lei, artigo, doutrina ou qualquer número, copie do trecho uma ou mais FRASES INTEIRAS (do começo da frase até o ponto), palavra por palavra, assim: [CITA T3: "frase inteira copiada do trecho."]. É a ÚNICA forma de citar. Fora dela, não escreva algarismo, número de processo ou recurso, nome de tribunal, súmula, tema, data ou valor.
 - Não invente fato, nome, data ou valor do caso. Onde a peça precisaria de algo que os trechos não têm, escreva [A COMPLETAR: o que falta] e ponha o item em "faltou".
 - Se os trechos não servem para a peça pedida, responda {"blocos": [], "faltou": ["por que não servem"]}.
 
@@ -99,62 +100,133 @@ const respostaDoModelo = z.object({
 /** Caractere de formatação (largura zero, direção…): some antes de qualquer conferência e da saída. */
 const invisiveis = (s: string) => s.replace(/\p{Cf}/gu, "");
 
-/** Forma de comparar: sem acento, minúscula, "S.T.J." → "stj", "A.I." → "ai". */
-function forma(s: string): string {
-  return normalizaParaCasar(invisiveis(s).normalize("NFKC")).replace(/\b(?:[a-z]\.\s?){2,}/g, (m) => `${m.replace(/[.\s]/g, "")} `);
+/** Forma de procurar cara de citação: sem acento, minúscula. */
+const forma = (s: string) => normalizaParaCasar(invisiveis(s).normalize("NFKC"));
+/**
+ * Sigla de tribunal soletrada em letras soltas ("S T J", "o S. T. J."). As letras
+ * se juntam numa corrida só — o artigo antes entra junto ("ostj") —, então a
+ * sigla é procurada DENTRO da corrida.
+ */
+function siglaSoletrada(s: string): boolean {
+  const corridas = normalizaParaCasar(invisiveis(s).normalize("NFKC")).match(/\b[a-z](?:[.\s]+[a-z]\b)+/g) ?? [];
+  return corridas.some((c) => /stj|stf|tst|tse|stm|trf|trt|tj/.test(c.replace(/[.\s]/g, "")));
 }
-const palavras = (s: string) => forma(s).split(/[^a-z0-9]+/).filter(Boolean);
+
+const NUMERO_POR_EXTENSO =
+  "(um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|catorze|quatorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cem|cento|duzent\\w*|trezent\\w*|quatrocent\\w*|quinhent\\w*|seiscent\\w*|setecent\\w*|oitocent\\w*|novecent\\w*|mil|milhao|milhoes)";
+const ROMANO = "(?=[mdclxvi]+\\b)m{0,4}(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})";
+/** Nome do que se cita por número. "re", "ai" e "ms" ficam de fora aqui: são palavras ("a ré"); ver `SIGLA_COM_NUMERO`. */
+const O_QUE_SE_CITA_POR_NUMERO =
+  "(temas?|sumulas?|verbetes?|enunciados?|informativos?|resp|aresp|earesp|eresp|agrg|agint|edcl|hc|habeas corpus|mandado de seguranca|rms|rhc|rcl|reclamacao|pet|adi|adc|ado|adpf|irdr|iac|rr|airr|apelac(ao|oes)( civel)?|agravo( de instrumento| interno| regimental)?|embargos( de divergencia| de declaracao)?|recurso (especial|extraordinario|de revista|ordinario)|processo|autos)";
 
 /**
- * Cara de citação no texto PRÓPRIO do modelo. Não precisa ser completa sozinha:
- * o modelo tem o canal certo para citar (`[CITA …]`) e algarismo já basta para
- * retirar. Esta lista pega a citação sem número. Sigla curta que é palavra comum
- * ("a ré", "aí", "do CC") fica de fora — com número, o algarismo a pega.
+ * Cara de citação no texto PRÓPRIO do modelo, na `forma` (sem acento, minúscula).
+ * Uma linha por família, para a mutação provar cada uma. Algarismo já é pego antes;
+ * estas pegam a citação sem algarismo.
  */
-const CARA_DE_CITACAO = new RegExp(
-  [
-    // tribunais e órgãos julgadores
-    "\\b(stj|stf|tst|tse|stm|trf\\d*|trt\\d*|tj ?[a-z]{2}|tj|tribuna(l|is)|supremo|pretorio|excels[oa]|corte (superior|especial|cidada|suprema)|(egregi[oa]|colend[oa]|excels[oa]) (corte|camara|turma|tribunal)|turmas?|camaras? (civel|criminal|de direito|reunidas)|(primeira|segunda|terceira|quarta|quinta|sexta|setima|oitava) (turma|secao|camara)|plenario|orgao especial|colegiado)\\b",
-    // o que se cita
-    "\\b(precedentes?|acordaos?|arestos?|decisum|ementas?|jurisprudencia\\w*|sumulas?|enunciados?|repetitivos?|repercussao geral|informativos?|orientac(ao|oes) jurisprudencia\\w*|leading case|entendimento (consolidado|pacifico|majoritario|dominante|firmado)|pacificad\\w*)\\b",
-    "\\bjulgados?\\b(?! (procedente|improcedente|parcialmente|extint))",
-    // quem julga
-    "\\b(relator(a|es|as)?|relatoria|ministr[oa]s?|min|desembargador\\w*|des\\.)(?![a-z])",
-    // classes e recursos
-    "\\b(resp|aresp|earesp|eresp|agrg|agint|edcl|hc|habeas corpus|mandado de seguranca|agravo (de instrumento|interno|regimental|em recurso)|pet|rcl|reclamacao constitucional|apelac(ao|oes) civ\\w*|rr|airr|adi|adc|ado|adpf|rms|rhc|irdr|iac|incidente de (resolucao|assuncao)|recurso (especial|extraordinario|de revista|ordinario|repetitivo)|embargos de (divergencia|declaracao))\\b",
-    // verbo de julgamento
-    "\\b(decidiu|decidiram|julgou|julgaram|assentou|assentaram|pacificou|pacificaram|consolidou|sumulou|firmou-se|fixou a tese|entendeu|entenderam|tem decidido|ja decidiu)\\b",
-    // número por extenso que serve para montar número de recurso ou tema
-    "\\b(cem|cento|duzent\\w*|trezent\\w*|quatrocent\\w*|quinhent\\w*|seiscent\\w*|setecent\\w*|oitocent\\w*|novecent\\w*|mil|milhao|milhoes|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|onze|doze|treze|catorze|quatorze|quinze|dezesseis|dezessete|dezoito|dezenove)\\b",
-  ].join("|"),
-);
+export const LINHAS_DE_CITACAO: Record<string, string> = {
+  tribunal: "\\b(stj|stf|tst|tse|stm|trf|trt|tj|tj ?[a-z]{2}|supremo|pretorio|excelso|corte (superior|especial|cidada|suprema)|(superior|suprema|alta) corte|(os|nossos|demais) tribunais|plenario|orgao especial|orgao julgador|secao de direito|grupo de camaras|turma (recursal|julgadora)|(primeira|segunda|terceira|quarta|quinta|sexta|setima|oitava|nona|decima) (turma|secao|camara))\\b",
+  o_que_se_cita: "\\b(precedentes?|arestos?|decisum|ementas?|jurisprudencia\\w*|sumulas?|verbetes?|repetitivos?|repercussao geral|orientac(ao|oes) jurisprudencia\\w*|leading case|entendimento (consolidado|pacifico|majoritario|dominante|firmado)|pacificad\\w*)\\b",
+  julgados:
+    "\\bjulgados\\b|(?<!transito em )\\bjulgado (do|da|no|na|proferido|paradigma|recente)\\b|\\b(nesse|neste|naquele|referido|citado|mencionado|aludido|no|pelo) julgado\\b",
+  quem_julga: "\\b(rel\\.|relatoria|min\\.|des\\.|dje|j\\. em)|\\bvoto (do|da) (ministr|desembargador|relator)",
+  numero_por_extenso: `\\b${O_QUE_SE_CITA_POR_NUMERO}\\s+(n\\S*\\s+|numero\\s+)?(${NUMERO_POR_EXTENSO}|${ROMANO})\\b`,
+  doutrina: "\\b(leciona|lecionam|preleciona|prelecionam|doutrina\\w*|magisterio de|na licao de|ensinamento de)\\b",
+  caso_nomeado: "\\b(caso|leading case) \\w+ (contra|versus|vs|x)\\b",
+  artigo_por_extenso: "\\bart(igo|\\.)? (primeiro|segundo|terceiro|quarto|quinto|sexto|setimo|oitavo|nono|decimo|vigesimo|centesimo)\\b",
+  tribunal_que_decide:
+    "\\b(tribuna(l|is)|cortes?|turmas?|camaras?|secao|plenario|pleno)\\b.*\\b(decidiu|decidiram|decide|decidem|entende|entendem|entendeu|entenderam|afirmou|afirmaram|destacou|ressaltou|registrou|julgou|julgaram|afastou|afastaram|reconheceu|reconheceram|firmou|fixou|assentou|pacificou|consolidou|sumulou)\\b",
+};
+const CARA_DE_CITACAO = new RegExp(Object.values(LINHAS_DE_CITACAO).join("|"));
+/** Na grafia original: sigla que também é palavra só conta em maiúscula e com número por extenso ou romano ("RE nove"). */
+const SIGLA_COM_NUMERO = new RegExp(`\\b(RE|ARE|AI|MS|Ap\\.?)\\s+(n\\S*\\s+)?(${NUMERO_POR_EXTENSO}|[MDCLXVI]+)\\b`, "i");
+const SIGLA_EM_MAIUSCULA = /\b(RE|ARE|AI|MS)\b/;
+/** Na grafia original: título seguido de nome próprio ("Ministro Fulano"), não de outro título ("Desembargador Relator"). */
+const TITULO_COM_NOME =
+  /\b(Ministr[oa]|Desembargador[a]?|Relator[a]?)\s+(?!Relator|Relatora|Presidente|Revisor|Revisora)\p{Lu}\p{Ll}+/u;
+/** Letra grega ou cirílica no meio de texto em português é disfarce ("SТJ" com T cirílico). */
+const OUTRO_ALFABETO = /[Ͱ-ϿЀ-ԯ]/;
 
-/** Numeração de seção no começo da linha ("1.", "2.1)", "IV -", "a)") não é número citado. */
-const NUMERACAO = /^\s*(?:\d{1,2}(?:\.\d{1,2})*|[IVXLCDM]{1,6}|[a-z])\s?[.)\-–]\s+/;
-
-function copiaDoAcervo(frase: string, acervo: string[]): boolean {
-  const p = palavras(frase);
-  if (p.length < PALAVRAS_PARA_SER_COPIA) return false;
-  const alvo = ` ${p.join(" ")} `;
-  return acervo.some((a) => ` ${palavras(a).join(" ")} `.includes(alvo));
+/**
+ * Forma literal, linha a linha: sem invisível, minúscula, sem aspas, espaço único e
+ * nenhum espaço em volta de pontuação (o PDF põe "n . º"). A quebra de linha fica.
+ */
+function literal(s: string): string {
+  return invisiveis(s)
+    .normalize("NFKC")
+    .split(/\r?\n/)
+    .map((l) =>
+      l
+        .toLowerCase()
+        .replace(/["“”'‘’]/g, "")
+        .replace(/\s+/g, " ")
+        .replace(/\s*([.,;:!?()[\]/\\ºª°\-–—])\s*/g, "$1")
+        .trim(),
+    )
+    .join("\n");
 }
+const semFinal = (s: string) => s.replace(/[.;:!?]+$/, "");
+const FIM_DE_FRASE = /[.;:!?]/;
+
+/**
+ * Onde uma frase pode começar em `texto`: no início; depois de . ; : ! ? que não
+ * esteja entre algarismos ("1.234" não termina frase — senão "Conforme o REsp 1."
+ * seria frase inteira); e depois de quebra de linha só quando a linha anterior
+ * termina em pontuação ou é título (toda em maiúscula). Quebra no meio de frase —
+ * o PDF faz isso o tempo todo — NÃO é começo: senão "Não é verdade que\na
+ * cláusula é válida" deixaria citar "a cláusula é válida".
+ */
+function comecosDeFrase(texto: string): { corrido: string; comecos: Set<number> } {
+  const original = invisiveis(texto).normalize("NFKC").split(/\r?\n/);
+  const linhas = literal(texto).split("\n");
+  const comecos = new Set<number>([0]);
+  let pos = 0;
+  linhas.forEach((l, i) => {
+    const anterior = (original[i - 1] ?? "").trim();
+    const titulo = anterior !== "" && anterior === anterior.toUpperCase() && /\p{Lu}/u.test(anterior);
+    if (i > 0 && (titulo || FIM_DE_FRASE.test(anterior.slice(-1)))) comecos.add(pos);
+    for (let k = 0; k < l.length; k++) if (FIM_DE_FRASE.test(l[k]!) && !/\d/.test(l[k + 1] ?? "")) comecos.add(pos + k + 1);
+    pos += l.length + 1;
+  });
+  return { corrido: linhas.join(" "), comecos };
+}
+
+/** `frase` é uma ou mais frases INTEIRAS e seguidas de `texto`. */
+export function frasesInteirasDe(frase: string, texto: string): boolean {
+  const alvo = semFinal(literal(frase).replace(/\n/g, " "));
+  if (alvo === "") return false;
+  const { corrido, comecos } = comecosDeFrase(texto);
+  for (const c of comecos) {
+    if (!corrido.startsWith(alvo, c)) continue;
+    const fim = c + alvo.length;
+    // Termina onde a próxima frase começa (pontuação que não é ponto de milhar, ou fim de
+    // linha antes de começo), ou no fim do texto.
+    if (fim === corrido.length || comecos.has(fim + 1)) return true;
+  }
+  return false;
+}
+
 
 /** Por que o texto próprio do modelo não pode sair, ou `null`. */
 export function motivoDoTexto(frase: string, acervo: string[]): "numero_no_texto" | "cara_de_citacao" | null {
-  if (copiaDoAcervo(frase, acervo)) return null;
-  if (/\d/.test(invisiveis(frase).normalize("NFKC"))) return "numero_no_texto";
-  if (CARA_DE_CITACAO.test(forma(frase))) return "cara_de_citacao";
+  // Cópia de frases inteiras do acervo é verdade do acervo, com o que tiver. Pedaço não passa.
+  if (acervo.some((a) => frasesInteirasDe(frase, a))) return null;
+  const limpa = invisiveis(frase).normalize("NFKC");
+  if (/\p{Nd}/u.test(limpa)) return "numero_no_texto";
+  if (OUTRO_ALFABETO.test(limpa) || CARA_DE_CITACAO.test(forma(frase)) || siglaSoletrada(frase)) return "cara_de_citacao";
+  if (TITULO_COM_NOME.test(limpa) || (SIGLA_EM_MAIUSCULA.test(limpa) && SIGLA_COM_NUMERO.test(forma(frase)))) return "cara_de_citacao";
   return null;
 }
 
 /**
- * Unidades: cada `[…]` inteiro (citação ou lacuna) e o resto em frases. A frase
- * só termina em . ! ? seguido de maiúscula, e não depois de abreviatura.
+ * Unidades: cada `[…]` sem colchete dentro (citação ou lacuna) e o resto em
+ * frases. A frase só termina em . ! ? seguido de maiúscula, e não depois de
+ * abreviatura. Um "[CITA …]" dentro de "[A COMPLETAR: …]" sai como unidade própria.
  */
 const ABREVIATURA = /\b(rel|min|des|j|n|nº|n\.º|art|arts|inc|al|fls?|pp?|dje|dj|cf|v|dr|dra|sr|sra|exmo|exma|s\.a|ltda)\.$/i;
 export function unidades(texto: string): string[] {
   const out: string[] = [];
-  for (const parte of texto.split(/(\[[^\]]*\])/)) {
+  for (const parte of texto.split(/(\[[^[\]]*\])/)) {
     if (parte.startsWith("[") && parte.endsWith("]")) {
       out.push(parte);
       continue;
@@ -173,25 +245,20 @@ export function unidades(texto: string): string[] {
 }
 
 const CITA = /^\[CITA\s+(T\d+)\s*:\s*["“]([\s\S]+?)["”]\s*\]$/i;
-const literalEm = (frase: string, trecho: string) => {
-  const n = (s: string) => invisiveis(s).normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
-  return n(trecho).includes(n(frase));
-};
 
 type Contexto = { acervo: string[]; trechoDe: Map<string, { texto: string; citacao: string }>; removidas: RemovidasDaMinuta };
 
 /** Uma unidade como sai na minuta, ou `null` se vira a marca. */
 function unidadeNaMinuta(u: string, c: Contexto): string | null {
-  const cita = u.match(CITA);
-  if (cita || /^\[CITA\b/i.test(u)) {
+  if (/^\[CITA\b/i.test(u)) {
+    const cita = u.match(CITA);
     const t = cita ? c.trechoDe.get(cita[1]!.toUpperCase()) : undefined;
-    const frase = cita?.[2]?.trim() ?? "";
-    const n = frase.split(/\s+/).length;
-    if (!t || n < PALAVRAS_DA_CITACAO.minimo || n > PALAVRAS_DA_CITACAO.maximo || !literalEm(frase, t.texto)) {
+    const frase = invisiveis(cita?.[2]?.trim() ?? "");
+    if (!t || !frasesInteirasDe(frase, t.texto)) {
       c.removidas.cita_invalida += 1;
       return null;
     }
-    return `“${invisiveis(frase)}” (${t.citacao})`;
+    return `“${frase}” (${t.citacao})`;
   }
   // Lacuna do próprio modelo é texto dele: passa pela mesma regra ("[A COMPLETAR: citar o HC …]").
   const motivo = motivoDoTexto(u, c.acervo);
@@ -202,13 +269,21 @@ function unidadeNaMinuta(u: string, c: Contexto): string | null {
   return invisiveis(u);
 }
 
+/** Numeração de seção no começo da linha ("1.", "2.1)", "IV -", "a)") não é número citado. */
+const NUMERACAO = /^\s*(?:\d{1,2}(?:\.\d{1,2})*|[IVXLCDM]{1,6}|[a-z])\s?[.)\-–]\s+/;
+
 /** Confere linha a linha (a quebra de parágrafo fica); a unidade que não passa vira a marca, no lugar. */
 function confere(texto: string, c: Contexto): { texto: string; retirou: boolean } {
   let retirou = false;
   // Citação copiada do PDF atravessa quebra de linha (medido no Luna): dentro de "[…]" a quebra vira espaço.
   const inteiro = invisiveis(texto).replace(/\[[^\]]*\]/g, (m) => m.replace(/\s*\n\s*/g, " "));
+  let anterior = "";
   const linhas = inteiro.split("\n").map((linha) => {
-    const numeracao = linha.match(NUMERACAO)?.[0] ?? "";
+    // Numeração só começa linha depois de linha vazia ou terminada em pontuação:
+    // senão "o Tema\n12. Logo…" esconderia o número na numeração.
+    const podeNumerar = anterior.trim() === "" || /[.:;!?)\]]$/.test(anterior.trim());
+    anterior = linha;
+    const numeracao = podeNumerar ? (linha.match(NUMERACAO)?.[0] ?? "") : "";
     const saida: string[] = [];
     for (const u of unidades(linha.slice(numeracao.length))) {
       const ok = unidadeNaMinuta(u, c);
@@ -223,8 +298,6 @@ function confere(texto: string, c: Contexto): { texto: string; retirou: boolean 
   });
   return { texto: linhas.join("\n").trim(), retirou };
 }
-
-const semMarcas = (s: string) => s.replace(/\[A COMPLETAR[^\]]*\]/gi, "").trim();
 
 export function pedidoDaMinuta(pedido: string, trechos: TrechoDaPeca[]): string {
   const acervo = trechos.map((t, i) => `[T${i + 1}] ${t.citacao}\n${t.texto}`).join("\n\n");
@@ -279,17 +352,19 @@ export async function escreveMinuta(args: {
     blocos.push({ texto: conferido, fontes: validas, novo: validas.length === 0 });
   }
 
-  // O que faltou é texto do modelo também — foi onde a primeira medição achou o REsp inventado.
+  // O que faltou é texto do modelo também — foi onde a primeira medição achou o REsp
+  // inventado. O item fica, com a marca no lugar do que saiu.
   const faltou: string[] = [];
   for (const f of lido.data.faltou) {
     if (f.trim() === "") continue;
     const { texto: conferido, retirou } = confere(f, c);
-    if (retirou) houveRetirada = true;
-    else faltou.push(conferido);
+    houveRetirada ||= retirou;
+    if (conferido !== "") faltou.push(conferido);
   }
   if (houveRetirada) faltou.push(FALTOU_RETIRADOS);
 
-  // Minuta do acervo precisa de ao menos um bloco apoiado nele que não seja só lacuna.
-  if (!blocos.some((b) => !b.novo && semMarcas(b.texto) !== "")) return { situacao: "sem_base", mensagem: SEM_BASE, faltou };
+  // "Sem base" é quando o MODELO não apoiou nada no acervo. Se apoiou e a trava
+  // retirou texto, a minuta sai com as marcas — dizer "sem base" seria mentir.
+  if (!blocos.some((b) => !b.novo)) return { situacao: "sem_base", mensagem: SEM_BASE, faltou };
   return { situacao: "minuta", aviso: AVISO_DA_MINUTA, blocos, faltou, fontes, removidas: c.removidas };
 }

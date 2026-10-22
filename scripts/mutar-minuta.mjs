@@ -1,42 +1,78 @@
-// Mutação da trava da minuta (0005.E1): tira cada regra de lib/acervo/minuta.ts e confere que
-// tests/unit/acervo-minuta.test.ts acusa. Restaura o arquivo no fim. Uso: node scripts/mutar-minuta.mjs
+// Mutação da trava da minuta (0005.E1): tira cada regra de lib/acervo/minuta.ts e confere
+// que tests/unit/acervo-minuta.test.ts acusa (algum teste FALHA — erro de compilação ou de
+// ambiente não conta). Roda antes uma vez sem mutação: se o teste já falha, nada vale.
+// Restaura o arquivo no fim, mesmo se for interrompido. Uso, da raiz: node scripts/mutar-minuta.mjs
 import fs from "node:fs";
-import { execSync } from "node:child_process";
-const F = "lib/acervo/minuta.ts"; // rodar da raiz: node scripts/mutar-minuta.mjs
+import { spawnSync } from "node:child_process";
+
+const F = "lib/acervo/minuta.ts";
+const TESTE = "tests/unit/acervo-minuta.test.ts";
 const original = fs.readFileSync(F, "utf8");
-const mutacoes = [
-  ["algarismo no texto do modelo", `if (/\\d/.test(invisiveis(frase).normalize("NFKC"))) return "numero_no_texto";`, ""],
-  ["cara de citação", `if (CARA_DE_CITACAO.test(forma(frase))) return "cara_de_citacao";`, ""],
-  ["cópia do acervo aceita sem conferir", `if (copiaDoAcervo(frase, acervo)) return null;`, `if (true) return null;`],
-  ["cópia sem mínimo de palavras", `if (p.length < PALAVRAS_PARA_SER_COPIA) return false;`, ""],
-  ["cópia por substring (sem limite de palavra)", "const alvo = ` ${p.join(\" \")} `;", "const alvo = p.join(\" \");"],
-  ["CITA sem conferir literal", `|| !literalEm(frase, t.texto)) {`, `) {`],
-  ["CITA sem conferir trecho", `if (!t || n < PALAVRAS_DA_CITACAO.minimo`, `if (n < PALAVRAS_DA_CITACAO.minimo`],
-  ["CITA sem mínimo de palavras", `n < PALAVRAS_DA_CITACAO.minimo || `, ``],
-  ["S.T.J. sem juntar letras", "replace(/\\b(?:[a-z]\\.\\s?){2,}/g, (m) => `${m.replace(/[.\\s]/g, \"\")} `)", "toString()"],
-  ["invisível não sai", `const invisiveis = (s: string) => s.replace(/\\p{Cf}/gu, "");`, `const invisiveis = (s: string) => s;`],
-  ["julgado procedente vira citação", `"\\\\bjulgados?\\\\b(?! (procedente|improcedente|parcialmente|extint))",`, `"\\\\bjulgados?\\\\b",`],
-  ["numeração de seção como número", `const numeracao = linha.match(NUMERACAO)?.[0] ?? "";`, `const numeracao = "";`],
-  ["quebra de linha dentro do CITA", `.replace(/\\[[^\\]]*\\]/g, (m) => m.replace(/\\s*\\n\\s*/g, " "));`, `;`],
-  ["parágrafo perdido", `return { texto: linhas.join("\\n").trim(), retirou };`, `return { texto: linhas.join(" ").trim(), retirou };`],
-  ["marcas seguidas não fundem", `if (saida[saida.length - 1] !== MARCA_DO_RETIRADO) saida.push(MARCA_DO_RETIRADO);`, `saida.push(MARCA_DO_RETIRADO);`],
-  ["pontuação solta", `.replace(/\\]\\s+([.,;:)])/g, "]$1")`, ``],
-  ["abreviatura corta a frase", `if (!ABREVIATURA.test(atual.trimEnd())) {`, `if (true) {`],
-  ["colchete cortado por dentro", `if (parte.startsWith("[") && parte.endsWith("]")) {`, `if (false) {`],
-  ["o que faltou sem a regra", `const { texto: conferido, retirou } = confere(f, c);`, `const conferido = f.trim(), retirou = false;`],
-  ["sem base só com zero blocos", `if (!blocos.some((b) => !b.novo && semMarcas(b.texto) !== "")) return`, `if (blocos.length === 0) return`],
-  ["fonte inventada aceita", `.filter((f) => c.trechoDe.has(f));`, `;`],
-  ["nada no acervo vira falha", `if (busca.situacao === "nada_no_acervo") return { situacao: "sem_base", mensagem: SEM_BASE, faltou: [] };`, `if (busca.situacao === "nada_no_acervo") return { situacao: "falha", codigo: "x" };`],
-  ["fora do formato vira sem base", `if (!lido.success) return { situacao: "falha", codigo: "formato" };`, `if (!lido.success) return { situacao: "sem_base", mensagem: SEM_BASE, faltou: [] };`],
-];
-let acusadas = 0;
-for (const [nome, de, para] of mutacoes) {
-  if (original.split(de).length !== 2) { console.info("NÃO ACHEI:", nome); continue; }
-  fs.writeFileSync(F, original.replace(de, () => para));
-  let passou = true;
-  try { execSync("pnpm exec vitest run tests/unit/acervo-minuta.test.ts", { stdio: "pipe" }); } catch { passou = false; }
-  console.info(passou ? "ESCAPOU:" : "acusou: ", nome);
-  if (!passou) acusadas++;
+
+/** "ok" (todos passam) | "acusou" (algum teste falhou) | "erro" (não rodou direito). */
+function roda() {
+  const r = spawnSync(`pnpm exec vitest run ${TESTE}`, { encoding: "utf8", shell: true });
+  const saida = `${r.stdout}\n${r.stderr}`.replace(/\x1b\[[0-9;]*m/g, "");
+  if (/Tests\s+\d+ failed/.test(saida)) return "acusou";
+  if (r.status === 0 && /Tests\s+\d+ passed/.test(saida)) return "ok";
+  return "erro";
 }
-fs.writeFileSync(F, original);
-console.info(`${acusadas} de ${mutacoes.length}`);
+
+const mutacoes = [
+  ["algarismo no texto do modelo", String.raw`if (/\p{Nd}/u.test(limpa)) return "numero_no_texto";`, ""],
+  ["outro alfabeto", String.raw`OUTRO_ALFABETO.test(limpa) || `, ""],
+  ["sigla soletrada", String.raw` || siglaSoletrada(frase)) return "cara_de_citacao";`, String.raw`) return "cara_de_citacao";`],
+  ["título com nome", String.raw`TITULO_COM_NOME.test(limpa) || `, ""],
+  ["sigla em maiúscula com número por extenso", String.raw` || (SIGLA_EM_MAIUSCULA.test(limpa) && SIGLA_COM_NUMERO.test(forma(frase)))`, ""],
+  ["invisível não sai", String.raw`const invisiveis = (s: string) => s.replace(/\p{Cf}/gu, "");`, String.raw`const invisiveis = (s: string) => s;`],
+  ["cópia aceita sem ser frase inteira", String.raw`if (acervo.some((a) => frasesInteirasDe(frase, a))) return null;`, String.raw`if (acervo.length > 0 && frase.length > 30) return null;`],
+  ["frase inteira: começo em qualquer lugar", String.raw`if (!corrido.startsWith(alvo, c)) continue;`, String.raw`if (!corrido.includes(alvo)) continue;`],
+  ["frase inteira: fim em qualquer lugar", String.raw`if (fim === corrido.length || comecos.has(fim + 1)) return true;`, String.raw`return true;`],
+  ["frase inteira: ponto de milhar termina frase", String.raw`&& !/\d/.test(l[k + 1] ?? "")) comecos.add(pos + k + 1);`, String.raw`) comecos.add(pos + k + 1);`],
+  ["frase inteira: toda quebra de linha é começo", String.raw`if (i > 0 && (titulo || FIM_DE_FRASE.test(anterior.slice(-1)))) comecos.add(pos);`, String.raw`if (i > 0) comecos.add(pos);`],
+  ["frase inteira: título não é fim de frase", String.raw`if (i > 0 && (titulo || FIM_DE_FRASE.test(anterior.slice(-1)))) comecos.add(pos);`, String.raw`if (i > 0 && FIM_DE_FRASE.test(anterior.slice(-1))) comecos.add(pos);`],
+  ["literal: aspas contam", String.raw`        .replace(/["“”'‘’]/g, "")`, ""],
+  ["CITA sem conferir frase inteira", String.raw`if (!t || !frasesInteirasDe(frase, t.texto)) {`, String.raw`if (!t) {`],
+  ["CITA sem conferir trecho", String.raw`if (!t || !frasesInteirasDe(frase, t.texto)) {`, String.raw`if (t && !frasesInteirasDe(frase, t.texto)) {`],
+  ["numeração em qualquer linha", String.raw`const podeNumerar = anterior.trim() === "" || /[.:;!?)\]]$/.test(anterior.trim());`, String.raw`const podeNumerar = true;`],
+  ["quebra de linha dentro do CITA", String.raw`.replace(/\[[^\]]*\]/g, (m) => m.replace(/\s*\n\s*/g, " "));`, ";"],
+  ["parágrafo perdido", String.raw`return { texto: linhas.join("\n").trim(), retirou };`, String.raw`return { texto: linhas.join(" ").trim(), retirou };`],
+  ["marcas seguidas não fundem", String.raw`if (saida[saida.length - 1] !== MARCA_DO_RETIRADO) saida.push(MARCA_DO_RETIRADO);`, String.raw`saida.push(MARCA_DO_RETIRADO);`],
+  ["pontuação solta", String.raw`.replace(/\]\s+([.,;:)])/g, "]$1")`, ""],
+  ["abreviatura corta a frase", String.raw`if (!ABREVIATURA.test(atual.trimEnd())) {`, String.raw`if (true) {`],
+  ["colchete cortado por dentro", String.raw`if (parte.startsWith("[") && parte.endsWith("]")) {`, String.raw`if (false) {`],
+  ["o que faltou sem a regra", String.raw`const { texto: conferido, retirou } = confere(f, c);`, String.raw`const conferido = f.trim(), retirou = false;`],
+  ["sem base mesmo com bloco apoiado", String.raw`if (!blocos.some((b) => !b.novo)) return`, String.raw`if (!blocos.some((b) => !b.novo && !b.texto.startsWith("[A COMPLETAR"))) return`],
+  ["fonte inventada aceita", String.raw`.filter((f) => c.trechoDe.has(f));`, ";"],
+  ["nada no acervo vira falha", String.raw`if (busca.situacao === "nada_no_acervo") return { situacao: "sem_base", mensagem: SEM_BASE, faltou: [] };`, String.raw`if (busca.situacao === "nada_no_acervo") return { situacao: "falha", codigo: "x" };`],
+  ["fora do formato vira sem base", String.raw`if (!lido.success) return { situacao: "falha", codigo: "formato" };`, String.raw`if (!lido.success) return { situacao: "sem_base", mensagem: SEM_BASE, faltou: [] };`],
+];
+// Cada família de LINHAS_DE_CITACAO, desligada sozinha ("(?!)" nunca casa).
+for (const linha of ["tribunal", "o_que_se_cita", "julgados", "quem_julga", "numero_por_extenso", "doutrina", "caso_nomeado", "artigo_por_extenso", "tribunal_que_decide"]) {
+  mutacoes.push([`família ${linha}`, `\n  ${linha}:`, `\n  ${linha}: "(?!)" ||`]);
+}
+
+let acusadas = 0;
+let invalidas = 0;
+try {
+  const base = roda();
+  if (base !== "ok") {
+    console.error(`PAROU: sem mutação o teste já dá "${base}" — consertar antes de medir.`);
+    process.exit(2);
+  }
+  for (const [nome, de, para] of mutacoes) {
+    if (original.split(de).length !== 2) {
+      console.info("NÃO ACHEI:", nome);
+      invalidas++;
+      continue;
+    }
+    fs.writeFileSync(F, original.replace(de, () => para));
+    const r = roda();
+    console.info(r === "acusou" ? "acusou: " : r === "ok" ? "ESCAPOU:" : "ERRO:   ", nome);
+    if (r === "acusou") acusadas++;
+    else if (r === "erro") invalidas++;
+  }
+} finally {
+  fs.writeFileSync(F, original);
+}
+console.info(`${acusadas} de ${mutacoes.length} acusadas${invalidas ? `; ${invalidas} não puderam ser medidas` : ""}`);

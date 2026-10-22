@@ -3,18 +3,27 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Buscador } from "@/lib/acervo/busca-por-problema";
-import { AVISO_DA_MINUTA, escreveMinuta, FALTOU_RETIRADOS, MARCA_DO_RETIRADO, SEM_BASE, unidades, type Minuta } from "@/lib/acervo/minuta";
+import {
+  AVISO_DA_MINUTA,
+  escreveMinuta,
+  FALTOU_RETIRADOS,
+  frasesInteirasDe,
+  MARCA_DO_RETIRADO,
+  motivoDoTexto,
+  SEM_BASE,
+  unidades,
+  type Minuta,
+} from "@/lib/acervo/minuta";
 
 /**
- * Ticket 0005.E1 (#33) — minuta a partir do acervo, com citação SÓ pelo acervo.
+ * Ticket 0005.E1 (#33) — minuta a partir do acervo, com citação SÓ pelo acervo
+ * (decisão do dono, 21/10/2026, depois de três revisões derrubarem travas por regra).
  *
- * Sobre respostas REAIS do gpt-6-luna (fixture gravada em 21/10/2026), com o
- * acervo de medida = as páginas das duas peças públicas:
  *   - critério 2: todo bloco aponta trecho do acervo ou sai marcado como novo;
- *   - critério 3: matéria sem base → "sem base", nunca peça bem escrita e vazia;
- *   - critério 4: citação só entra como frase literal de um trecho, com a página.
- *     Medido: o Luna devolveu um "[CITA T6: …]" com a lei trocada — frase que
- *     não existe em trecho nenhum — e ela não sai;
+ *   - critério 3: matéria sem base → "sem base"; e "sem base" só quando o modelo
+ *     não apoiou nada — se a trava retirou texto, a minuta sai com as marcas;
+ *   - critério 4: citação só entra como FRASES INTEIRAS de um trecho, com a
+ *     página. Pedaço não: "Súmula 30" tirado de "Súmula 302", tese sem o "Não";
  *   - critério 7: a minuta se declara rascunho;
  *   - critério 9: a busca é da organização de quem pede.
  */
@@ -35,6 +44,16 @@ const HITS = pecas.flatMap((p) =>
 );
 const ORG = "22222222-2222-4222-8222-222222222222";
 
+/** Acervo curto e conhecido, para os testes de citação. */
+const ACERVO = [
+  "Aplica-se a Súmula 302 do STJ ao caso. Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula.",
+  "Não é verdade que\na cláusula arbitral é válida. Incidem as Súmulas 297, 479 do STJ.",
+  "1. DO CABIMENTO DA AÇÃO\nA ação civil pública é cabível.",
+  'Assim, in verbis: "a lei exige manifestação escrita." A Lei n . º 8.078/90 atribui legitimação.',
+  "A cláusula arbitral\nimposta ao consumidor é nula de pleno direito.",
+].join("\n");
+const hitsDe = (content: string) => [{ ...HITS[0]!, content }];
+
 function buscador(results = HITS) {
   return vi.fn<Buscador>(async () => ({ ok: true, results }) as unknown as Awaited<ReturnType<Buscador>>);
 }
@@ -49,8 +68,10 @@ async function blocosDe(texto: string, buscar = buscador()) {
   if (m.situacao !== "minuta") throw new Error(m.situacao);
   return m;
 }
-/** Frase de T1 (p. 1 da ACP Netflix), para citar de verdade. */
-const FRASE_DE_T1 = "INSTITUTO DEFESA COLETIVA, pessoa jurídica de direito privado, associação sem";
+/** O segundo bloco de uma minuta "Do mérito." + `texto`, sobre o acervo curto. */
+async function segundoBloco(texto: string) {
+  return (await blocosDe(resposta([DO_MERITO, { texto, fontes: ["T1"] }]), buscador(hitsDe(ACERVO)))).blocos[1]!.texto;
+}
 
 describe("sobre a resposta real do Luna", () => {
   it("pedido típico: todo bloco com trecho do acervo ou marcado como novo (critério 2)", async () => {
@@ -61,25 +82,17 @@ describe("sobre a resposta real do Luna", () => {
       expect(b.novo).toBe(b.fontes.length === 0);
       for (const f of b.fontes) expect(ids.has(f)).toBe(true);
     }
-    expect(m.blocos.some((b) => !b.novo)).toBe(true);
   });
 
-  it("toda citação que sai é frase literal do trecho, com documento e página (critério 4)", async () => {
+  it("as citações do Luna entram, e cada uma é frase inteira da página que ela cita (critério 4)", async () => {
     const m = await blocosDe(gravada.respostas.tipico);
+    expect(m.removidas.cita_invalida).toBe(0);
     const citadas = m.blocos.flatMap((b) => [...b.texto.matchAll(/“([^”]+)” \((ACP (?:Netflix|Brascan)\.pdf), p\. (\d+)\)/g)]);
-    expect(citadas.length).toBeGreaterThan(0);
-    const norm = (s: string) => s.replace(/\s+/g, " ").toLowerCase();
+    expect(citadas.length).toBe((gravada.respostas.tipico.match(/\[CITA/g) ?? []).length);
     for (const [, frase, doc, pg] of citadas) {
       const pagina = HITS.find((h) => h.metadata.nome === doc && h.metadata.pagina_inicial === Number(pg))!;
-      expect(norm(pagina.content)).toContain(norm(frase!));
+      expect(frasesInteirasDe(frase!, pagina.content)).toBe(true);
     }
-  });
-
-  it("o '[CITA T6: …]' que o Luna inventou (lei trocada, frase de trecho nenhum) não sai", async () => {
-    expect(gravada.respostas.tipico).toContain("8.078/90 (Código de Defesa do Consumidor) atribui ao Ministério Público"); // o modelo de fato tentou
-    const m = await blocosDe(gravada.respostas.tipico);
-    expect(tudo(m)).not.toContain("atribui ao Ministério Público legitimação");
-    expect(m.removidas.cita_invalida).toBeGreaterThan(0);
   });
 
   it("a minuta se declara rascunho e traz o que faltou (critério 7)", async () => {
@@ -93,120 +106,137 @@ describe("sobre a resposta real do Luna", () => {
     expect(await minuta(gravada.respostas.armadilha)).toMatchObject({ situacao: "sem_base", mensagem: SEM_BASE });
   });
 
-  it.each(["citacao_forcada", "citacao_em_texto_livre"] as const)("%s: o REsp e a súmula inventados não aparecem em forma nenhuma", async (qual) => {
+  it.each(["citacao_forcada", "citacao_em_texto_livre"] as const)("%s: o REsp e a súmula inventados — que o Luna escreveu — não aparecem", async (qual) => {
+    expect(gravada.respostas[qual]).toMatch(/1\.999\.999/);
     const m = await minuta(gravada.respostas[qual]);
     expect(tudo(m)).not.toMatch(/1\.?999\.?999|s[uú]mula\s*(n[oº.]?\s*)?999/i);
     if (m.situacao === "minuta") for (const b of m.blocos) expect(b.texto.split("[").length).toBe(b.texto.split("]").length);
   });
-
-  it("a versão em texto livre do Luna (REsp escrito direto) teve mesmo o REsp retirado", async () => {
-    expect(gravada.respostas.citacao_em_texto_livre).toMatch(/1\.999\.999/);
-    const m = await blocosDe(gravada.respostas.citacao_em_texto_livre);
-    expect(m.removidas.numero_no_texto + m.removidas.cara_de_citacao).toBeGreaterThan(0);
-    expect(m.faltou).toContain(FALTOU_RETIRADOS);
-  });
 });
 
-describe("citação só pelo acervo: [CITA Tn: …]", () => {
-  it("frase literal do trecho entra entre aspas, com documento e página", async () => {
-    const m = await blocosDe(resposta([{ texto: `Da legitimidade. [CITA T1: "${FRASE_DE_T1}"]`, fontes: ["T1"] }]));
-    expect(m.blocos[0]!.texto).toBe(`Da legitimidade. “${FRASE_DE_T1}” (ACP Netflix.pdf, p. 1)`);
-  });
-
-  it("frase copiada do PDF atravessando quebra de linha também vale (medido no Luna)", async () => {
-    const hits = [{ ...HITS[0]!, content: "A cláusula arbitral\nimposta ao consumidor é nula de pleno direito." }];
-    const m = await blocosDe(resposta([{ texto: '[CITA T1: "A cláusula arbitral\nimposta ao consumidor é nula"]', fontes: ["T1"] }]), buscador(hits));
-    expect(m.blocos[0]!.texto).toBe("“A cláusula arbitral imposta ao consumidor é nula” (ACP Netflix.pdf, p. 1)");
-  });
-
+describe("citação só pelo acervo: [CITA Tn: frases inteiras]", () => {
   it.each([
-    ["trecho que não existe", `[CITA T99: "${FRASE_DE_T1}"]`],
-    ["frase que não está no trecho apontado", '[CITA T1: "Conforme o REsp 1.999.999/SP, a cláusula é nula."]'],
-    ["frase com uma palavra trocada", `[CITA T1: "${FRASE_DE_T1.replace("privado", "público")}"]`],
-    ["curta demais", '[CITA T1: "INSTITUTO"]'],
-    ["fora do formato", "[CITA T1 INSTITUTO DEFESA COLETIVA]"],
+    ["uma frase", "Aplica-se a Súmula 302 do STJ ao caso."],
+    ["duas frases seguidas", "Aplica-se a Súmula 302 do STJ ao caso. Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula."],
+    ["sem o ponto final", "Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula"],
+    ["depois de título, na linha de baixo", "A ação civil pública é cabível."],
+    ["entre aspas no acervo", "a lei exige manifestação escrita."],
+    ["com o espaçamento do PDF ('n . º' no acervo, 'n.º' na cópia)", "A Lei n.º 8.078/90 atribui legitimação."],
+    ["atravessando a quebra de linha do PDF", "A cláusula arbitral imposta ao consumidor é nula de pleno direito."],
+  ])("%s: entra entre aspas, com documento e página", async (_, frase) => {
+    expect(await segundoBloco(`[CITA T1: "${frase}"]`)).toBe(`“${frase}” (ACP Netflix.pdf, p. 1)`);
+  });
+
+  it("a quebra de linha DENTRO do [CITA] também vale (medido no Luna)", async () => {
+    expect(await segundoBloco('[CITA T1: "A cláusula arbitral\nimposta ao consumidor é nula de pleno direito."]')).toMatch(/^“A cláusula arbitral imposta/);
+  });
+
+  // As formas que a terceira revisão usou para passar julgado falso "verificado".
+  it.each([
+    ["pedaço que corta o número ('Súmula 30' de 'Súmula 302')", '[CITA T1: "Aplica-se a Súmula 30"]'],
+    ["frase que começa no meio de outra", '[CITA T1: "Súmula 302 do STJ ao caso."]'],
+    ["frase que começa no meio de palavra", '[CITA T1: "plica-se a Súmula 302 do STJ ao caso."]'],
+    ["'frase' que acaba num ponto de milhar", '[CITA T1: "Conforme o REsp 1."]'],
+    ["tese sem o 'Não' que a negava (a quebra do PDF não é começo de frase)", '[CITA T1: "a cláusula arbitral é válida."]'],
+    ["pontuação trocada no número ('297, 479' → '297.479')", '[CITA T1: "Incidem as Súmulas 297.479 do STJ."]'],
+    ["palavra trocada", '[CITA T1: "Aplica-se a Súmula 303 do STJ ao caso."]'],
+    ["trecho que não existe", '[CITA T99: "Aplica-se a Súmula 302 do STJ ao caso."]'],
+    ["uma palavra só (não é frase inteira)", '[CITA T1: "Aplica-se."]'],
+    ["fora do formato", "[CITA T1 Aplica-se a Súmula 302]"],
   ])("%s: não entra, vira a marca", async (_, cita) => {
-    const m = await blocosDe(resposta([DO_MERITO, { texto: cita, fontes: ["T1"] }]));
-    expect(m.blocos[1]!.texto).toBe(MARCA_DO_RETIRADO);
-    expect(m.removidas.cita_invalida).toBe(1);
+    expect(await segundoBloco(cita)).toBe(MARCA_DO_RETIRADO);
+  });
+
+  it("texto colado depois de um [CITA] válido passa pela regra do texto próprio", async () => {
+    expect(await segundoBloco('[CITA T1: "Aplica-se a Súmula 302 do STJ ao caso."] (Tema seis).')).toBe(
+      `“Aplica-se a Súmula 302 do STJ ao caso.” (ACP Netflix.pdf, p. 1) ${MARCA_DO_RETIRADO}`,
+    );
+  });
+
+  it("[CITA] dentro de '[A COMPLETAR: …]' sai citado, sem colchete sobrando", async () => {
+    const t = await segundoBloco('[A COMPLETAR: conferir [CITA T1: "Aplica-se a Súmula 302 do STJ ao caso."]]');
+    expect(t).toContain("“Aplica-se a Súmula 302 do STJ ao caso.” (ACP Netflix.pdf, p. 1)");
+    expect(t.split("[").length).toBe(t.split("]").length);
   });
 });
 
-describe("texto próprio do modelo não pode ter cara de citação", () => {
-  // Formas que derrubaram as duas versões anteriores da trava (dois segundos leitores, 21/10/2026).
+describe("texto próprio do modelo: a rede", () => {
   it.each([
+    // algarismo
     "Conforme o REsp n.º 1.999.999/SP, a cláusula é nula.",
     "Aplica-se o Tema 1.234 do STJ.",
-    "Incidem as Súmulas 297 e 479.",
-    "No processo 1234567-89.2020.8.26.0100 a tese foi acolhida.",
-    "REsp 139.",
     "Súmula 21.",
-    "Conforme o HC 999 e o MS 1.438, a cláusula é nula.",
-    "O Supremo, no RE 12 e no ARE 74, afastou a tese.",
-    "Na Apelação Cível do TJ-SP, a questão foi decidida.",
-    "Nesse sentido, decisum do TJ/MG.",
-    "Assim decidiu o S.T.J., no caso.",
-    "Conforme o S.T.J., a cláusula é nula.",
-    "O Excelso Supremo afastou a cláusula.",
-    "Corte Cidadã.",
-    "Em precedente da Terceira Turma, de relatoria da Min. Nancy Andrighi, a cláusula foi anulada.",
-    "O STJ, em recurso repetitivo, pacificou que a cláusula é nula.",
-    "O Pretório Excelso, no Habeas Corpus, assentou a tese.",
-    "A tese do Tema mil e noventa e um se aplica ao caso.",
-    "Como decidiu Nancy Andrighi, a cláusula é abusiva.",
-    "Voto do Des. Fulano de Tal.",
-    "[A COMPLETAR: citar o HC 1 999 999 do Pretório Excelso]",
-    "No R​Esp, o S​TJ pacificou a questão.",
+    "No processo 1234567-89.2020.8.26.0100 a tese foi acolhida.",
     "Belo Horizonte, 21 de outubro de 2026.",
+    "Nos termos do art. 300 do CPC, requer a tutela de urgência.",
+    "[A COMPLETAR: citar o HC 1 999 999 do Pretório Excelso]",
+    // sem algarismo: uma família de cada
+    "O Pretório afastou a tese.",
+    "Conforme a jurisprudência, a cláusula é nula.",
+    "Os julgados afastam a cláusula.",
+    "Nesse julgado, a Corte afirmou que a cláusula é nula.",
+    "Rel. Fulana de Tal, a cláusula é nula.",
+    "Aplica-se ao caso o Tema seis.",
+    "Conforme o Tema DCCCLXXIX, a cláusula é nula.",
+    "Como leciona a melhor doutrina, a cláusula é nula.",
+    "No caso Netflix contra Procon, a cláusula foi anulada.",
+    "O artigo sétimo do CDC protege o consumidor.",
+    "O Tribunal de Justiça de São Paulo decidiu igual.",
+    "A Seção de Direito Privado reconheceu a nulidade.",
+    "Conforme o S.T.J., a cláusula é nula.",
+    "Conforme o S T J, a cláusula é nula.",
+    "Conforme o SТJ, a cláusula é nula.",
+    "No R​Esp, o S​TJ pacificou a questão.",
+    "Como votou o Ministro Fulano, a cláusula é nula.",
+    "No RE nove, a tese caiu.",
   ])("%s → marca", async (frase) => {
-    const m = await blocosDe(resposta([DO_MERITO, { texto: frase, fontes: ["T1"] }]));
-    expect(m.blocos[1]!.texto).toBe(MARCA_DO_RETIRADO);
+    expect(await segundoBloco(frase)).toBe(MARCA_DO_RETIRADO);
+  });
+
+  // Falsos positivos que a terceira revisão achou: com eles, uma apelação inteira saía "sem base".
+  it.each([
+    "Interpõe a presente APELAÇÃO CÍVEL em face da sentença.",
+    "EGRÉGIO TRIBUNAL DE JUSTIÇA DO ESTADO DE MINAS GERAIS",
+    "Colenda Câmara Cível,",
+    "Excelentíssimo Senhor Desembargador Relator.",
+    "Opõe EMBARGOS DE DECLARAÇÃO contra o acórdão embargado.",
+    "AGRAVO DE INSTRUMENTO com pedido de efeito suspensivo.",
+    "MANDADO DE SEGURANÇA contra ato do Secretário.",
+    "Após o trânsito em julgado da sentença, requer o arquivamento.",
+    "A ré decidiu cancelar o contrato.",
+    "A ré entendeu por bem cobrar a multa.",
+    "O banco consolidou a propriedade do imóvel.",
+    "O material informativo não esclarecia a cláusula.",
+    "O enunciado da cláusula é claro.",
+    "A turma de formandos contratou o serviço.",
+    "A cláusula é nula de pleno direito.",
+    "Requer seja o pedido julgado procedente, com a condenação da ré.",
+    "Conforme relatório do PROCON, houve cobrança indevida.",
+    "O órgão de defesa do consumidor entende que houve abuso.",
+    "Nestes termos, pede deferimento.",
+    "1. DOS FATOS",
+    "a) a citação da ré para responder à presente ação.",
+  ])("%s → fica", async (frase) => {
+    expect(await segundoBloco(frase)).toBe(frase);
+  });
+
+  it("limite declarado: atribuição só pelo nome, sem título nem tribunal, não é pega", () => {
+    expect(motivoDoTexto("Como decidiu Nancy Andrighi, a cláusula é abusiva.", [])).toBeNull();
+  });
+
+  it("cópia de frase INTEIRA do acervo passa, com o que ela tiver; pedaço sem o 'Não' não", async () => {
+    expect(await segundoBloco("Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula.")).toBe("Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula.");
+    expect(await segundoBloco("a cláusula arbitral é válida, segundo o STJ.")).toBe(MARCA_DO_RETIRADO);
+  });
+
+  it("numeração de seção só começa linha depois de fim de frase: 'o Tema\\n12. Logo' não esconde o número", async () => {
+    const t = await segundoBloco("Aplica-se ao caso o Tema\n12. Logo, a cláusula é nula.");
+    expect(t).not.toMatch(/12/);
   });
 
   it("citação partida em dois blocos não passa", async () => {
     const m = await minuta(resposta([DO_MERITO, { texto: "Conforme decidiu o STJ no REsp", fontes: ["T1"] }, { texto: "1.999.999/SP, a cláusula é nula.", fontes: ["T1"] }]));
     expect(tudo(m)).not.toMatch(/STJ no REsp|1\.?999/);
-  });
-
-  it("o resto do julgado não fica: 'Nesse julgado, a Corte afirmou…' sai junto", async () => {
-    const m = await minuta(resposta([DO_MERITO, { texto: "O STJ julgou o REsp 1.999.999/SP. Nesse julgado, a Corte afirmou que a cláusula arbitral é nula.", fontes: ["T1"] }]));
-    expect(tudo(m)).not.toMatch(/Nesse julgado|1\.?999/);
-  });
-
-  it("frase do modelo que é cópia do acervo (6+ palavras) passa, com o que ela tiver", async () => {
-    const hits = [{ ...HITS[0]!, content: "Nesse sentido, o STJ fixou no REsp 1.234.567/SP que a cláusula é nula." }];
-    const m = await blocosDe(resposta([{ texto: "Nesse sentido, o STJ fixou no REsp 1.234.567/SP que a cláusula é nula.", fontes: ["T1"] }]), buscador(hits));
-    expect(m.blocos[0]!.texto).toContain("REsp 1.234.567/SP");
-  });
-
-  it("prefixo curto de citação do acervo não é cópia: 'REsp 1.234.' não vale pelo 'REsp 1.234.567'", async () => {
-    const hits = [{ ...HITS[0]!, content: "Do mérito. Conforme o REsp 1.234.567/SP, a cláusula é nula." }];
-    const m = await blocosDe(resposta([DO_MERITO, { texto: "REsp 1.234.", fontes: ["T1"] }]), buscador(hits));
-    expect(m.blocos[1]!.texto).toBe(MARCA_DO_RETIRADO);
-  });
-
-  it("cópia conta por palavra inteira: frase longa que termina no começo de um número do acervo não é cópia", async () => {
-    const hits = [{ ...HITS[0]!, content: "Do mérito. Conforme decidiu a corte no julgamento do REsp 1234567, a cláusula é nula." }];
-    const m = await blocosDe(resposta([DO_MERITO, { texto: "Conforme decidiu a corte no julgamento do REsp 123.", fontes: ["T1"] }]), buscador(hits));
-    expect(m.blocos[1]!.texto).toBe(MARCA_DO_RETIRADO);
-  });
-
-  it("texto comum de peça fica", async () => {
-    const frases = [
-      "Requer seja o pedido julgado procedente, com a condenação da ré.",
-      "Conforme relatório do PROCON, houve cobrança indevida.",
-      "A ré impôs a cláusula abusiva ao consumidor.",
-      "Nestes termos, pede deferimento.",
-      "1. DOS FATOS",
-      "a) a citação da ré para responder à presente ação.",
-    ];
-    const m = await blocosDe(resposta(frases.map((texto) => ({ texto, fontes: ["T1"] }))));
-    expect(m.blocos.map((b) => b.texto)).toEqual(frases);
-  });
-
-  it("o custo escolhido: artigo de lei e endereçamento a desembargador fora de citação viram lacuna", async () => {
-    const m = await blocosDe(resposta([DO_MERITO, { texto: "Nos termos do art. 300 do CPC, requer a tutela de urgência.", fontes: ["T1"] }, { texto: "Excelentíssimo Senhor Desembargador Relator.", fontes: ["T1"] }]));
-    expect(m.blocos.slice(1).map((b) => b.texto)).toEqual([MARCA_DO_RETIRADO, MARCA_DO_RETIRADO]);
   });
 });
 
@@ -231,7 +261,7 @@ describe("a forma do texto", () => {
     expect(m.blocos[0]!.texto).toBe("A ré impôs a cláusula.");
   });
 
-  it("as unidades: abreviatura de citação não corta a frase, e o colchete vai inteiro", () => {
+  it("as unidades: abreviatura não corta a frase; o colchete vai inteiro", () => {
     expect(unidades("REsp 1/SP, Rel. Min. Fulana, j. 10/10/2021. Outra frase. [A COMPLETAR: x. Y] Fim.")).toEqual([
       "REsp 1/SP, Rel. Min. Fulana, j. 10/10/2021.",
       "Outra frase.",
@@ -249,9 +279,14 @@ describe("o que o código garante, sem depender do modelo", () => {
     expect(chamar).not.toHaveBeenCalled();
   });
 
-  it("minuta sem nenhum bloco apoiado no acervo é 'sem base', mesmo escrita pelo modelo (critério 3)", async () => {
+  it("'sem base' só quando o modelo não apoia nada no acervo (critério 3)", async () => {
     expect(await minuta(resposta([{ texto: "CONTESTAÇÃO TRABALHISTA.", fontes: [] }, { texto: "Das horas extras.", fontes: [] }]))).toMatchObject({ situacao: "sem_base" });
-    expect(await minuta(resposta([{ texto: "Conforme o REsp n.º 1.999.999/SP.", fontes: ["T1"] }]))).toMatchObject({ situacao: "sem_base" });
+  });
+
+  it("havia base e a trava retirou tudo: a minuta sai com as marcas, nunca 'sem base' (seria mentir)", async () => {
+    const m = await blocosDe(resposta([{ texto: "Conforme o REsp n.º 1.999.999/SP.", fontes: ["T1"] }]));
+    expect(m.blocos).toEqual([{ texto: MARCA_DO_RETIRADO, fontes: ["T1"], novo: false }]);
+    expect(m.faltou).toContain(FALTOU_RETIRADOS);
   });
 
   it("a busca é a da organização de quem pede, e o modelo só vê os trechos que ela devolveu (critério 9)", async () => {
@@ -273,9 +308,9 @@ describe("o que o código garante, sem depender do modelo", () => {
     expect(m.removidas.fonte_inexistente).toBe(2);
   });
 
-  it("o que faltou passa pela mesma regra, e diz que houve retirada", async () => {
-    const m = await blocosDe(resposta([DO_MERITO], ["Falta juntar o acórdão do Tema 1.234 do STJ e do processo 1234567-89.2020.8.26.0100.", "Qualificação das partes."]));
-    expect(m.faltou).toEqual(["Qualificação das partes.", FALTOU_RETIRADOS]);
+  it("o que faltou passa pela mesma regra: o item fica, com a marca no lugar do que saiu", async () => {
+    const m = await blocosDe(resposta([DO_MERITO], ["Falta o acórdão do Tema 1.234 do STJ. Falta a procuração.", "Qualificação das partes."]));
+    expect(m.faltou).toEqual([`${MARCA_DO_RETIRADO} Falta a procuração.`, "Qualificação das partes.", FALTOU_RETIRADOS]);
   });
 
   it("modelo dizendo que os trechos não servem: 'sem base', com o motivo", async () => {
@@ -296,6 +331,6 @@ describe("o que o código garante, sem depender do modelo", () => {
 });
 
 /*
- * Mutações (21/10/2026): 23 de 23 acusadas — `node scripts/mutar-minuta.mjs` tira
- * cada regra de lib/acervo/minuta.ts, roda este arquivo e restaura.
+ * Mutações: `node scripts/mutar-minuta.mjs` tira cada regra de lib/acervo/minuta.ts
+ * (inclusive cada linha de LINHAS_DE_CITACAO), roda este arquivo e restaura.
  */
