@@ -385,6 +385,27 @@ async function executarCriacaoDeAgendamento(
     }
   }
 
+  // A conversa também é input externo: da org E do contato. O INSERT já a recusa
+  // (`fn_appointment_stamp`, 0224), mas como 500 e depois da checagem de horário;
+  // aqui sai 404, como o contato. Sem contato o banco recusa sempre, e aqui também.
+  if (input.conversation_id) {
+    const { data: conversa, error: erroConversa } = input.contact_id
+      ? await supabase
+          .from("conversations")
+          .select("id")
+          .eq("id", input.conversation_id)
+          .eq("organization_id", ctx.organization_id)
+          .eq("contact_id", input.contact_id)
+          .maybeSingle()
+      : { data: null, error: null };
+    if (erroConversa) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroConversa.message);
+    }
+    if (!conversa) {
+      throw new ApiError(404, "not_found", undefined, ctx.requestId, "Conversa não encontrada.");
+    }
+  }
+
   const fim = new Date(inicio.getTime() + tipo.duration_minutes * 60_000);
   const consulta = await exigeHorarioLivre(supabase, ctx, {
     eventTypeId: tipo.id,
