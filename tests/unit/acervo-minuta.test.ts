@@ -92,9 +92,10 @@ describe("sobre a resposta real do Luna", () => {
 
   it("as citações do Luna entram, e cada uma é frase inteira da página que ela cita (critério 4)", async () => {
     const m = await blocosDe(gravada.respostas.tipico);
-    expect(m.removidas.cita_invalida).toBe(0);
+    // Custo declarado da 0005.E3: a do T8 vinha depois de "in verbis:" — dois-pontos não abre frase.
+    expect(m.removidas.cita_invalida).toBe(1);
     const citadas = m.blocos.flatMap((b) => [...b.texto.matchAll(/“([^”]+)” \((ACP (?:Netflix|Brascan)\.pdf), p\. (\d+)\)/g)]);
-    expect(citadas.length).toBe((gravada.respostas.tipico.match(/\[CITA/g) ?? []).length);
+    expect(citadas.length).toBe((gravada.respostas.tipico.match(/\[CITA/g) ?? []).length - 1);
     for (const [, frase, doc, pg] of citadas) {
       const pagina = HITS.find((h) => h.metadata.nome === doc && h.metadata.pagina_inicial === Number(pg))!;
       expect(frasesInteirasDe(frase!, pagina.content)).toBe(true);
@@ -126,7 +127,6 @@ describe("citação só pelo acervo: [CITA Tn: frases inteiras]", () => {
     ["duas frases seguidas", "Aplica-se a Súmula 302 do STJ ao caso. Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula.", "Aplica-se a Súmula 302 do STJ ao caso. Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula."],
     ["sem o ponto final (o ponto vem do acervo)", "Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula", "Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula."],
     ["depois de título, na linha de baixo", "A ação civil pública é cabível.", "A ação civil pública é cabível."],
-    ["entre aspas no acervo", "a lei exige manifestação escrita.", "a lei exige manifestação escrita."],
     ["com o espaçamento do PDF (sai como está no acervo)", "A Lei n.º 8.078/90 atribui legitimação.", "A Lei n . º 8.078/90 atribui legitimação."],
     ["atravessando a quebra de linha do PDF", "A cláusula arbitral imposta ao consumidor é nula de pleno direito.", "A cláusula arbitral imposta ao consumidor é nula de pleno direito."],
     ["em caixa diferente (sai a caixa do acervo)", "aplica-se a súmula 302 do stj ao caso.", "Aplica-se a Súmula 302 do STJ ao caso."],
@@ -157,6 +157,7 @@ describe("citação só pelo acervo: [CITA Tn: frases inteiras]", () => {
     ["palavra trocada", '[CITA T1: "Aplica-se a Súmula 303 do STJ ao caso."]'],
     ["trecho que não existe", '[CITA T99: "Aplica-se a Súmula 302 do STJ ao caso."]'],
     ["uma palavra só (não é frase inteira)", '[CITA T1: "Aplica-se."]'],
+    ["depois de dois-pontos ('in verbis:') — 0005.E3: só a frase inteira, desde antes dos dois-pontos", '[CITA T1: "a lei exige manifestação escrita."]'],
     ["fora do formato", "[CITA T1 Aplica-se a Súmula 302]"],
   ])("%s: não entra, vira a marca", async (_, cita) => {
     expect(await segundoBloco(cita)).toBe(MARCA_DO_RETIRADO);
@@ -259,6 +260,29 @@ describe("texto próprio do modelo: a rede", () => {
   });
 });
 
+describe("0005.E3 — frase inteira que, sozinha, troca quem afirma", () => {
+  // Os casos da quarta revisão: a frase existe inteira no acervo, mas o começo dela
+  // era falso — vinha depois de dois-pontos, de abreviatura ou de título que continua.
+  it.each([
+    ["depois de 'Alega a ré:'", "o consumidor não tem direito à devolução.", "Do caso. Alega a ré: o consumidor não tem direito à devolução. Fim."],
+    ["depois de 'de que:'", "a cláusula arbitral é válida.", "Do caso. Não procede o argumento de que: a cláusula arbitral é válida. Fim."],
+    ["depois de 'S.A.'", "de que a multa é devida.", "Do caso. Alegação da Netflix S.A. de que a multa é devida. Fim."],
+    ["depois de 'Min.'", "Fulano, para quem a cláusula é válida.", "Do caso. Vencido o Min. Fulano, para quem a cláusula é válida. Fim."],
+    ["depois de 'inc.'", "IV do art. 51 aos contratos entre empresas.", "Do caso. Não se aplica o inc. IV do art. 51 aos contratos entre empresas. Fim."],
+    ["depois de título que termina em 'QUE'", "a cobrança é devida.", "Do caso.\nNÃO PROCEDE A ALEGAÇÃO DE QUE\na cobrança é devida. Fim."],
+  ])("%s: não é frase inteira", (_, frase, texto) => {
+    expect(frasesInteirasDe(frase, texto)).toBe(false);
+  });
+
+  it.each([
+    ["a frase inteira, desde antes dos dois-pontos", "Alega a ré: o consumidor não tem direito à devolução.", "Do caso. Alega a ré: o consumidor não tem direito à devolução. Fim."],
+    ["a frase com 'S.A.' no meio", "Alegação da Netflix S.A. de que a multa é devida.", "Do caso. Alegação da Netflix S.A. de que a multa é devida. Fim."],
+    ["depois de título de verdade", "A ação civil pública é cabível.", "Do caso.\nDO CABIMENTO DA AÇÃO\nA ação civil pública é cabível. Fim."],
+  ])("%s: continua citável", (_, frase, texto) => {
+    expect(frasesInteirasDe(frase, texto)).toBe(true);
+  });
+});
+
 describe("o trecho é PEDAÇO de `fatia`, cortado em qualquer ponto (quarta revisão)", () => {
   const pedacos = pecas.flatMap((p) => fatia(p.paginas));
   /** Frases "de verdade" para o teste: corta só antes de maiúscula, e descarta o que acaba em abreviatura ("art.", "V."). */
@@ -281,7 +305,11 @@ describe("o trecho é PEDAÇO de `fatia`, cortado em qualquer ponto (quarta revi
 
   it("frase do meio do pedaço real continua citável", () => {
     const meio = pedacos
-      .flatMap((p) => frasesDe(p.texto).slice(1, -1).map((f) => [f, p.texto] as const))
+      .flatMap((p) => {
+        const frases = frasesDe(p.texto);
+        // Fragmento que começa depois de abreviatura ("Dra.", "Rel.", "V.") não é frase: 0005.E3 o recusa.
+        return frases.slice(1, -1).flatMap((f, i) => (abreviada(frases[i]!) ? [] : [[f, p.texto] as const]));
+      })
       .filter(([f]) => f.length > 40 && !abreviada(f));
     expect(meio.length).toBeGreaterThan(10);
     for (const [f, t] of meio) expect(frasesInteirasDe(f, t)).toBe(true);

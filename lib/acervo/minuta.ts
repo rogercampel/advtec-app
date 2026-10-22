@@ -203,6 +203,21 @@ function literal(s: string): string {
 }
 const semFinal = (s: string) => s.replace(/[.;:!?]+$/, "");
 const FIM_DE_FRASE = /[.;:!?]/;
+/**
+ * O que ABRE a frase seguinte — sem os dois-pontos (0005.E3). Depois de ":" vem a
+ * fala de outro ("Alega a ré: …", "Não procede o argumento de que: …"); citá-la
+ * sozinha inverte quem afirma. Quem quiser citar depois de ":" cita a frase inteira.
+ */
+const ABRE_FRASE = /[.;!?]/;
+/** Ponto de abreviatura não termina frase: "S.A.", "Min.", "inc.", "J." abriam começo falso (quarta revisão). */
+const ABREVIATURA_COM_PONTO = new Set(["rel", "min", "des", "j", "n", "nº", "art", "arts", "inc", "al", "fl", "fls", "p", "pp", "dje", "dj", "cf", "v", "vs", "dr", "dra", "sr", "sra", "exmo", "exma", "ltda", "cia", "av", "ss", "ex", "sec", "séc"]);
+function eAbreviatura(antes: string): boolean {
+  const palavra = antes.match(/(\p{L}+)$/u)?.[1];
+  return palavra !== undefined && (palavra.length === 1 || ABREVIATURA_COM_PONTO.has(palavra));
+}
+/** Título que termina em conectivo ("NÃO PROCEDE A ALEGAÇÃO DE QUE") continua na linha de baixo: não abre frase. */
+// `(^|\s)` e não `\b`: o `\b` do JS não vê letra acentuada, e "ação" terminava no "conectivo" "o".
+const TERMINA_EM_CONECTIVO = /(^|\s)(que|de|da|do|das|dos|e|ou|a|o|as|os|em|no|na|nos|nas|por|para|com|sobre|contra|sem|ao|aos)$/;
 
 /**
  * Onde uma frase pode começar em `texto`: depois de . ; : ! ? que não esteja
@@ -228,15 +243,20 @@ function comecosDeFrase(texto: string): { original: string; corrido: string; ori
     const sem = bruta.replace(/\r$/, "");
     const l = linhaLiteral(sem, base);
     const anterior = (linhasOriginais[i - 1] ?? "").trim();
-    const titulo = anterior !== "" && anterior === anterior.toUpperCase() && /\p{Lu}/u.test(anterior);
+    const titulo =
+      anterior !== "" && anterior === anterior.toUpperCase() && /\p{Lu}/u.test(anterior) && !TERMINA_EM_CONECTIVO.test(literal(anterior));
     if (i > 0) {
       corrido += " "; // a quebra de linha vira espaço no texto corrido
       origem.push(base - 1);
-      if (titulo || FIM_DE_FRASE.test(anterior.slice(-1))) comecos.add(corrido.length);
+      const fechou = ABRE_FRASE.test(anterior.slice(-1)) && !(anterior.endsWith(".") && eAbreviatura(literal(anterior).slice(0, -1)));
+      if (titulo || fechou) comecos.add(corrido.length);
     }
     const pos = corrido.length;
     for (let k = 0; k < l.texto.length; k++) {
-      if (FIM_DE_FRASE.test(l.texto[k]!) && !/\d/.test(l.texto[k + 1] ?? "")) comecos.add(pos + k + 1);
+      const ch = l.texto[k]!;
+      if (!ABRE_FRASE.test(ch) || /\d/.test(l.texto[k + 1] ?? "")) continue;
+      if (ch === "." && eAbreviatura(l.texto.slice(0, k))) continue;
+      comecos.add(pos + k + 1);
     }
     corrido += l.texto;
     origem.push(...l.origem);
