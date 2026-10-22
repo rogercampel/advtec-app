@@ -327,6 +327,18 @@ export const NAV_CATALOG = [
     section: "O dia a dia da venda",
   },
   {
+    // AdvTec (fork), issue #18 (spec 0001.E4): a ficha do caso — o negócio do funil
+    // (ADR 0003) visto pelo advogado. "Fichas dos casos", e não "Casos": o original
+    // já tem "Casos" (os atendimentos do agente, grupo IA). Sem `minRole`: ver é de
+    // quem vê o funil; agendar é `agent`, cobrado pela rota da agenda.
+    href: "/app/fichas",
+    label: "Fichas dos casos",
+    description: "Cada caso com quem é o cliente, o histórico da conversa, os documentos enviados e os compromissos — sem abrir a conversa.",
+    icon: "UserCircle",
+    group: "crm",
+    section: "O dia a dia da venda",
+  },
+  {
     // Extraída do PR #418 (@clinicacentrodosorrisosc-code). Fica no CRM e no
     // sidebar porque é tela de USO DIÁRIO — quem atende abre para ver o que
     // vence hoje, do mesmo jeito que abre o Inbox. Sem `minRole`: `viewer` VÊ
