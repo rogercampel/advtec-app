@@ -73,7 +73,7 @@ describe("conexão recuperável", () => {
     f.transport.createSession.mockResolvedValue({ created: false, session: { name: "owned", status: "STOPPED" } });
     f.transport.startExistingSession.mockResolvedValue({ name: "owned", status: "SCAN_QR_CODE" });
     expect((await connectWahaChannel(f.db, f.db, f.transport, f.input)).channel.status).toBe("SCAN_QR_CODE");
-    expect(f.transport.createSession).toHaveBeenNthCalledWith(2, "owned");
+    expect(f.transport.createSession).toHaveBeenNthCalledWith(2, "owned", { guardarHistorico: true });
     expect(f.transport.startExistingSession).toHaveBeenNthCalledWith(2, "owned");
     expect(f.transport.deleteSession).not.toHaveBeenCalled();
   });
@@ -117,7 +117,7 @@ describe("nome de sessão fora do teto do WAHA", () => {
     const novo = f.renomeios[0]!;
     expect(novo.length).toBeLessThanOrEqual(54);
     expect(novo).toMatch(/^org_[0-9a-f]{8}_[0-9a-f]{32}$/);
-    expect(f.transport.createSession).toHaveBeenCalledWith(novo);
+    expect(f.transport.createSession).toHaveBeenCalledWith(novo, { guardarHistorico: true });
     expect(f.transport.startExistingSession).toHaveBeenCalledWith(novo);
     expect(f.transport.createSession).not.toHaveBeenCalledWith(NOME_LEGADO);
     expect(resultado.channel.status).toBe("SCAN_QR_CODE");
@@ -151,7 +151,7 @@ describe("nome de sessão fora do teto do WAHA", () => {
     const nome = "o".repeat(54);
     const f = fixture({ waha_session_name: nome });
     expect((await connectWahaChannel(f.db, f.db, f.transport, f.input)).channel.status).toBe("SCAN_QR_CODE");
-    expect(f.transport.createSession).toHaveBeenCalledWith(nome);
+    expect(f.transport.createSession).toHaveBeenCalledWith(nome, { guardarHistorico: true });
     expect(f.renomeios).toEqual([]);
   });
 
@@ -243,8 +243,16 @@ describe("a opção por conexão do acervo (#999)", () => {
     await connectWahaChannel(ligado.db, ligado.db, ligado.transport, ligado.input);
     expect(ligado.transport.createSession).toHaveBeenCalledWith("owned", { guardarHistorico: true });
 
-    const desligado = fixture();
+    const desligado = fixture({ metadata: { guardar_historico: false } });
     await connectWahaChannel(desligado.db, desligado.db, desligado.transport, desligado.input);
     expect(desligado.transport.createSession).toHaveBeenCalledWith("owned");
+  });
+  it("AdvTec: canal novo, sem a chave, nasce GUARDANDO o histórico", async () => {
+    // Os dois caminhos do padrão: sem `metadata` nenhum, e `metadata` com outras chaves.
+    for (const linha of [{}, { metadata: { onboarding: true } }]) {
+      const novo = fixture(linha);
+      await connectWahaChannel(novo.db, novo.db, novo.transport, novo.input);
+      expect(novo.transport.createSession).toHaveBeenCalledWith("owned", { guardarHistorico: true });
+    }
   });
 });
