@@ -15,14 +15,15 @@
  *     texto livre não fecha: três revisões derrubaram travas por regra, para os
  *     dois lados. Então o modelo não escreve citação — escreve
  *     `[CITA T3: "frase"]`, e o código só a põe na minuta, entre aspas e com
- *     documento e página, se ela for UMA OU MAIS FRASES INTEIRAS daquele trecho.
- *     Frase inteira, e não pedaço: pedaço deixava passar "Súmula 30" tirado de
- *     "Súmula 302" e a tese sem o "Não" que a negava;
+ *     documento e página, se ela for UMA OU MAIS FRASES INTEIRAS daquele trecho —
+ *     e imprime a grafia do ACERVO, não a do modelo. Frase inteira, e não pedaço:
+ *     pedaço deixava passar "Súmula 30" tirado de "Súmula 302" e a tese sem o
+ *     "Não" que a negava. O início e o fim do trecho não contam como limite de
+ *     frase, porque o trecho é um pedaço cortado em qualquer ponto;
  *   - o texto PRÓPRIO do modelo é uma rede, não a garantia: frase com algarismo
  *     (fora a numeração de seção) ou com cara de citação (`LINHAS_DE_CITACAO`)
- *     vira a marca, no lugar — a menos que seja cópia de frases inteiras do
- *     acervo. Nome de peça ("apelação cível"), endereçamento ("Egrégio
- *     Tribunal", "Desembargador Relator") e "julgado procedente" passam;
+ *     vira a marca, no lugar. Nome de peça ("apelação cível"), endereçamento
+ *     ("Egrégio Tribunal", "Desembargador Relator") e "julgado procedente" passam;
  *   - a minuta declara que é rascunho (critério 7), e termina com o que faltou,
  *     que passa pela mesma regra.
  *
@@ -152,8 +153,9 @@ const OUTRO_ALFABETO = /[Ͱ-ϿЀ-ԯ]/;
  * nenhum espaço em volta de pontuação (o PDF põe "n . º"). A quebra de linha fica.
  */
 function literal(s: string): string {
+  // NFC, e não NFKC: NFKC troca "º" por "o", e a citação tem de sair com o caractere do acervo.
   return invisiveis(s)
-    .normalize("NFKC")
+    .normalize("NFC")
     .split(/\r?\n/)
     .map((l) =>
       l
@@ -169,17 +171,22 @@ const semFinal = (s: string) => s.replace(/[.;:!?]+$/, "");
 const FIM_DE_FRASE = /[.;:!?]/;
 
 /**
- * Onde uma frase pode começar em `texto`: no início; depois de . ; : ! ? que não
- * esteja entre algarismos ("1.234" não termina frase — senão "Conforme o REsp 1."
- * seria frase inteira); e depois de quebra de linha só quando a linha anterior
- * termina em pontuação ou é título (toda em maiúscula). Quebra no meio de frase —
- * o PDF faz isso o tempo todo — NÃO é começo: senão "Não é verdade que\na
- * cláusula é válida" deixaria citar "a cláusula é válida".
+ * Onde uma frase pode começar em `texto`: depois de . ; : ! ? que não esteja
+ * entre algarismos ("1.234" não termina frase — senão "Conforme o REsp 1." seria
+ * frase inteira); e depois de quebra de linha só quando a linha anterior termina
+ * em pontuação ou é título (toda em maiúscula). Quebra no meio de frase — o PDF
+ * faz isso o tempo todo — NÃO é começo.
+ *
+ * O INÍCIO do texto não é começo de frase: o trecho do acervo é um pedaço de
+ * `fatia` (lib/acervo/fatiar.ts), cortado a cada ~1800 caracteres em qualquer
+ * ponto. Tratar o corte como começo deixava citar "a cláusula é válida" de "Não é
+ * verdade que | a cláusula é válida". A primeira frase do pedaço fica de fora; a
+ * sobreposição entre pedaços a traz inteira no pedaço anterior.
  */
 function comecosDeFrase(texto: string): { corrido: string; comecos: Set<number> } {
-  const original = invisiveis(texto).normalize("NFKC").split(/\r?\n/);
+  const original = invisiveis(texto).normalize("NFC").split(/\r?\n/);
   const linhas = literal(texto).split("\n");
-  const comecos = new Set<number>([0]);
+  const comecos = new Set<number>();
   let pos = 0;
   linhas.forEach((l, i) => {
     const anterior = (original[i - 1] ?? "").trim();
@@ -198,19 +205,36 @@ export function frasesInteirasDe(frase: string, texto: string): boolean {
   const { corrido, comecos } = comecosDeFrase(texto);
   for (const c of comecos) {
     if (!corrido.startsWith(alvo, c)) continue;
-    const fim = c + alvo.length;
-    // Termina onde a próxima frase começa (pontuação que não é ponto de milhar, ou fim de
-    // linha antes de começo), ou no fim do texto.
-    if (fim === corrido.length || comecos.has(fim + 1)) return true;
+    // Termina onde a próxima frase começa: pontuação que não é ponto de milhar, ou fim de
+    // linha antes de começo. O FIM do texto, sozinho, não basta — o pedaço pode ter sido
+    // cortado no meio da frase.
+    if (comecos.has(c + alvo.length + 1)) return true;
   }
   return false;
 }
 
+const ESPACO_OU_ASPA = String.raw`[\s"“”'‘’]`;
+/**
+ * A grafia do ACERVO para a frase que o modelo copiou — caixa, aspas, espaços e a
+ * pontuação final de lá. Sem isto a citação imprimia o texto do modelo: "A
+ * cláusula é válida?" do acervo saía "A cláusula é válida." entre aspas, com página.
+ */
+export function grafiaDoAcervo(frase: string, texto: string): string | null {
+  const alvo = semFinal(literal(frase).replace(/\n/g, " "));
+  let padrao = "";
+  for (const ch of alvo) {
+    padrao += ch === " " ? `${ESPACO_OU_ASPA}+` : `${ch.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&")}${ESPACO_OU_ASPA}*`;
+  }
+  const achado = new RegExp(`${padrao}[.;:!?]*`, "iu").exec(invisiveis(texto).normalize("NFC"));
+  return achado ? achado[0].replace(/\s+/g, " ").trim() : null;
+}
 
-/** Por que o texto próprio do modelo não pode sair, ou `null`. */
-export function motivoDoTexto(frase: string, acervo: string[]): "numero_no_texto" | "cara_de_citacao" | null {
-  // Cópia de frases inteiras do acervo é verdade do acervo, com o que tiver. Pedaço não passa.
-  if (acervo.some((a) => frasesInteirasDe(frase, a))) return null;
+/**
+ * Por que o texto próprio do modelo não pode sair, ou `null`. Não há exceção para
+ * "cópia do acervo": frase copiada sem `[CITA]` sairia sem aspas e sem fonte — fato
+ * de outro cliente virava fato do caso.
+ */
+export function motivoDoTexto(frase: string): "numero_no_texto" | "cara_de_citacao" | null {
   const limpa = invisiveis(frase).normalize("NFKC");
   if (/\p{Nd}/u.test(limpa)) return "numero_no_texto";
   if (OUTRO_ALFABETO.test(limpa) || CARA_DE_CITACAO.test(forma(frase)) || siglaSoletrada(frase)) return "cara_de_citacao";
@@ -246,7 +270,7 @@ export function unidades(texto: string): string[] {
 
 const CITA = /^\[CITA\s+(T\d+)\s*:\s*["“]([\s\S]+?)["”]\s*\]$/i;
 
-type Contexto = { acervo: string[]; trechoDe: Map<string, { texto: string; citacao: string }>; removidas: RemovidasDaMinuta };
+type Contexto = { trechoDe: Map<string, { texto: string; citacao: string }>; removidas: RemovidasDaMinuta };
 
 /** Uma unidade como sai na minuta, ou `null` se vira a marca. */
 function unidadeNaMinuta(u: string, c: Contexto): string | null {
@@ -254,14 +278,15 @@ function unidadeNaMinuta(u: string, c: Contexto): string | null {
     const cita = u.match(CITA);
     const t = cita ? c.trechoDe.get(cita[1]!.toUpperCase()) : undefined;
     const frase = invisiveis(cita?.[2]?.trim() ?? "");
-    if (!t || !frasesInteirasDe(frase, t.texto)) {
+    const grafia = t && frasesInteirasDe(frase, t.texto) ? grafiaDoAcervo(frase, t.texto) : null;
+    if (!t || !grafia) {
       c.removidas.cita_invalida += 1;
       return null;
     }
-    return `“${frase}” (${t.citacao})`;
+    return `“${grafia}” (${t.citacao})`;
   }
   // Lacuna do próprio modelo é texto dele: passa pela mesma regra ("[A COMPLETAR: citar o HC …]").
-  const motivo = motivoDoTexto(u, c.acervo);
+  const motivo = motivoDoTexto(u);
   if (motivo) {
     c.removidas[motivo] += 1;
     return null;
@@ -332,7 +357,6 @@ export async function escreveMinuta(args: {
 
   const fontes: FonteDaMinuta[] = trechos.map((t, i) => ({ id: `T${i + 1}`, citacao: t.citacao, processo: t.processo }));
   const c: Contexto = {
-    acervo: trechos.map((t) => t.texto),
     trechoDe: new Map(fontes.map((f, i) => [f.id, { texto: trechos[i]!.texto, citacao: f.citacao }])),
     removidas: { fonte_inexistente: 0, numero_no_texto: 0, cara_de_citacao: 0, cita_invalida: 0, bloco_vazio: 0 },
   };

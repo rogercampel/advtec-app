@@ -25,15 +25,17 @@ const mutacoes = [
   ["título com nome", String.raw`TITULO_COM_NOME.test(limpa) || `, ""],
   ["sigla em maiúscula com número por extenso", String.raw` || (SIGLA_EM_MAIUSCULA.test(limpa) && SIGLA_COM_NUMERO.test(forma(frase)))`, ""],
   ["invisível não sai", String.raw`const invisiveis = (s: string) => s.replace(/\p{Cf}/gu, "");`, String.raw`const invisiveis = (s: string) => s;`],
-  ["cópia aceita sem ser frase inteira", String.raw`if (acervo.some((a) => frasesInteirasDe(frase, a))) return null;`, String.raw`if (acervo.length > 0 && frase.length > 30) return null;`],
   ["frase inteira: começo em qualquer lugar", String.raw`if (!corrido.startsWith(alvo, c)) continue;`, String.raw`if (!corrido.includes(alvo)) continue;`],
-  ["frase inteira: fim em qualquer lugar", String.raw`if (fim === corrido.length || comecos.has(fim + 1)) return true;`, String.raw`return true;`],
+  ["frase inteira: fim em qualquer lugar", String.raw`if (comecos.has(c + alvo.length + 1)) return true;`, String.raw`return true;`],
+  ["pedaço: o fim do texto vale como fim de frase", String.raw`if (comecos.has(c + alvo.length + 1)) return true;`, String.raw`if (comecos.has(c + alvo.length + 1) || c + alvo.length === corrido.length) return true;`],
+  ["pedaço: o começo do texto vale como começo de frase", String.raw`const comecos = new Set<number>();`, String.raw`const comecos = new Set<number>([0]);`],
   ["frase inteira: ponto de milhar termina frase", String.raw`&& !/\d/.test(l[k + 1] ?? "")) comecos.add(pos + k + 1);`, String.raw`) comecos.add(pos + k + 1);`],
   ["frase inteira: toda quebra de linha é começo", String.raw`if (i > 0 && (titulo || FIM_DE_FRASE.test(anterior.slice(-1)))) comecos.add(pos);`, String.raw`if (i > 0) comecos.add(pos);`],
   ["frase inteira: título não é fim de frase", String.raw`if (i > 0 && (titulo || FIM_DE_FRASE.test(anterior.slice(-1)))) comecos.add(pos);`, String.raw`if (i > 0 && FIM_DE_FRASE.test(anterior.slice(-1))) comecos.add(pos);`],
   ["literal: aspas contam", String.raw`        .replace(/["“”'‘’]/g, "")`, ""],
-  ["CITA sem conferir frase inteira", String.raw`if (!t || !frasesInteirasDe(frase, t.texto)) {`, String.raw`if (!t) {`],
-  ["CITA sem conferir trecho", String.raw`if (!t || !frasesInteirasDe(frase, t.texto)) {`, String.raw`if (t && !frasesInteirasDe(frase, t.texto)) {`],
+  ["CITA sem conferir frase inteira", String.raw`const grafia = t && frasesInteirasDe(frase, t.texto) ? grafiaDoAcervo(frase, t.texto) : null;`, String.raw`const grafia = t ? grafiaDoAcervo(frase, t.texto) : null;`],
+  ["CITA imprime o texto do modelo", "return `“${grafia}” (${t.citacao})`;", "return `“${frase}” (${t.citacao})`;"],
+  ["grafia procurada com NFKC (º vira o)", String.raw`.exec(invisiveis(texto).normalize("NFC"));`, String.raw`.exec(invisiveis(texto).normalize("NFKC"));`],
   ["numeração em qualquer linha", String.raw`const podeNumerar = anterior.trim() === "" || /[.:;!?)\]]$/.test(anterior.trim());`, String.raw`const podeNumerar = true;`],
   ["quebra de linha dentro do CITA", String.raw`.replace(/\[[^\]]*\]/g, (m) => m.replace(/\s*\n\s*/g, " "));`, ";"],
   ["parágrafo perdido", String.raw`return { texto: linhas.join("\n").trim(), retirou };`, String.raw`return { texto: linhas.join(" ").trim(), retirou };`],
@@ -76,3 +78,5 @@ try {
   fs.writeFileSync(F, original);
 }
 console.info(`${acusadas} de ${mutacoes.length} acusadas${invalidas ? `; ${invalidas} não puderam ser medidas` : ""}`);
+// Portão: qualquer mutação que escapou ou não pôde ser medida reprova.
+process.exitCode = acusadas === mutacoes.length ? 0 : 1;

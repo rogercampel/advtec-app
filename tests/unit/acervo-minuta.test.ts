@@ -3,11 +3,13 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Buscador } from "@/lib/acervo/busca-por-problema";
+import { fatia } from "@/lib/acervo/fatiar";
 import {
   AVISO_DA_MINUTA,
   escreveMinuta,
   FALTOU_RETIRADOS,
   frasesInteirasDe,
+  grafiaDoAcervo,
   MARCA_DO_RETIRADO,
   motivoDoTexto,
   SEM_BASE,
@@ -44,8 +46,12 @@ const HITS = pecas.flatMap((p) =>
 );
 const ORG = "22222222-2222-4222-8222-222222222222";
 
-/** Acervo curto e conhecido, para os testes de citação. */
+/**
+ * Acervo curto e conhecido, para os testes de citação. Começa com uma frase de
+ * sobra: o começo do trecho não é começo de frase (o trecho é pedaço cortado).
+ */
 const ACERVO = [
+  "Do caso.",
   "Aplica-se a Súmula 302 do STJ ao caso. Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula.",
   "Não é verdade que\na cláusula arbitral é válida. Incidem as Súmulas 297, 479 do STJ.",
   "1. DO CABIMENTO DA AÇÃO\nA ação civil pública é cabível.",
@@ -116,15 +122,24 @@ describe("sobre a resposta real do Luna", () => {
 
 describe("citação só pelo acervo: [CITA Tn: frases inteiras]", () => {
   it.each([
-    ["uma frase", "Aplica-se a Súmula 302 do STJ ao caso."],
-    ["duas frases seguidas", "Aplica-se a Súmula 302 do STJ ao caso. Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula."],
-    ["sem o ponto final", "Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula"],
-    ["depois de título, na linha de baixo", "A ação civil pública é cabível."],
-    ["entre aspas no acervo", "a lei exige manifestação escrita."],
-    ["com o espaçamento do PDF ('n . º' no acervo, 'n.º' na cópia)", "A Lei n.º 8.078/90 atribui legitimação."],
-    ["atravessando a quebra de linha do PDF", "A cláusula arbitral imposta ao consumidor é nula de pleno direito."],
-  ])("%s: entra entre aspas, com documento e página", async (_, frase) => {
-    expect(await segundoBloco(`[CITA T1: "${frase}"]`)).toBe(`“${frase}” (ACP Netflix.pdf, p. 1)`);
+    ["uma frase", "Aplica-se a Súmula 302 do STJ ao caso.", "Aplica-se a Súmula 302 do STJ ao caso."],
+    ["duas frases seguidas", "Aplica-se a Súmula 302 do STJ ao caso. Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula.", "Aplica-se a Súmula 302 do STJ ao caso. Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula."],
+    ["sem o ponto final (o ponto vem do acervo)", "Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula", "Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula."],
+    ["depois de título, na linha de baixo", "A ação civil pública é cabível.", "A ação civil pública é cabível."],
+    ["entre aspas no acervo", "a lei exige manifestação escrita.", "a lei exige manifestação escrita."],
+    ["com o espaçamento do PDF (sai como está no acervo)", "A Lei n.º 8.078/90 atribui legitimação.", "A Lei n . º 8.078/90 atribui legitimação."],
+    ["atravessando a quebra de linha do PDF", "A cláusula arbitral imposta ao consumidor é nula de pleno direito.", "A cláusula arbitral imposta ao consumidor é nula de pleno direito."],
+    ["em caixa diferente (sai a caixa do acervo)", "aplica-se a súmula 302 do stj ao caso.", "Aplica-se a Súmula 302 do STJ ao caso."],
+  ])("%s: entra entre aspas, com documento e página", async (_, frase, noAcervo) => {
+    expect(await segundoBloco(`[CITA T1: "${frase}"]`)).toBe(`“${noAcervo}” (ACP Netflix.pdf, p. 1)`);
+  });
+
+  it("a pontuação é a do acervo: pergunta não vira afirmação", async () => {
+    const m = await blocosDe(
+      resposta([DO_MERITO, { texto: '[CITA T1: "A cláusula arbitral é válida."]', fontes: ["T1"] }]),
+      buscador(hitsDe("Do caso. A cláusula arbitral é válida? Evidentemente que não.")),
+    );
+    expect(m.blocos[1]!.texto).toBe("“A cláusula arbitral é válida?” (ACP Netflix.pdf, p. 1)");
   });
 
   it("a quebra de linha DENTRO do [CITA] também vale (medido no Luna)", async () => {
@@ -221,12 +236,16 @@ describe("texto próprio do modelo: a rede", () => {
   });
 
   it("limite declarado: atribuição só pelo nome, sem título nem tribunal, não é pega", () => {
-    expect(motivoDoTexto("Como decidiu Nancy Andrighi, a cláusula é abusiva.", [])).toBeNull();
+    expect(motivoDoTexto("Como decidiu Nancy Andrighi, a cláusula é abusiva.")).toBeNull();
   });
 
-  it("cópia de frase INTEIRA do acervo passa, com o que ela tiver; pedaço sem o 'Não' não", async () => {
-    expect(await segundoBloco("Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula.")).toBe("Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula.");
-    expect(await segundoBloco("a cláusula arbitral é válida, segundo o STJ.")).toBe(MARCA_DO_RETIRADO);
+  it("cópia do acervo SEM [CITA] não tem passe: sairia sem aspas nem fonte (fato de outro cliente virava fato do caso)", async () => {
+    expect(await segundoBloco("Conforme o REsp 1.234.567/SP, a cláusula arbitral é nula.")).toBe(MARCA_DO_RETIRADO);
+    const m = await blocosDe(
+      resposta([DO_MERITO, { texto: "A autora contratou o plano em 10/03/2019, pagando R$ 49,90 mensais.", fontes: ["T1"] }]),
+      buscador(hitsDe("Do caso. A autora contratou o plano em 10/03/2019, pagando R$ 49,90 mensais. Fim.")),
+    );
+    expect(m.blocos[1]!.texto).toBe(MARCA_DO_RETIRADO);
   });
 
   it("numeração de seção só começa linha depois de fim de frase: 'o Tema\\n12. Logo' não esconde o número", async () => {
@@ -237,6 +256,55 @@ describe("texto próprio do modelo: a rede", () => {
   it("citação partida em dois blocos não passa", async () => {
     const m = await minuta(resposta([DO_MERITO, { texto: "Conforme decidiu o STJ no REsp", fontes: ["T1"] }, { texto: "1.999.999/SP, a cláusula é nula.", fontes: ["T1"] }]));
     expect(tudo(m)).not.toMatch(/STJ no REsp|1\.?999/);
+  });
+});
+
+describe("o trecho é PEDAÇO de `fatia`, cortado em qualquer ponto (quarta revisão)", () => {
+  const pedacos = pecas.flatMap((p) => fatia(p.paginas));
+  /** Frases "de verdade" para o teste: corta só antes de maiúscula, e descarta o que acaba em abreviatura ("art.", "V."). */
+  const frasesDe = (t: string) => t.split(/(?<=[.!?])\s+(?=\p{Lu})/u);
+  const abreviada = (f: string) => /\b\p{L}{1,4}\.$/u.test(f);
+
+  it("em todo pedaço real, o fragmento do começo e o do fim (cortado) não passam como frase inteira", () => {
+    expect(pedacos.length).toBeGreaterThan(5);
+    let cortesNoFim = 0;
+    for (const p of pedacos) {
+      const frases = frasesDe(p.texto);
+      expect(frasesInteirasDe(frases[0]!, p.texto)).toBe(false);
+      if (!/[.;:!?]$/.test(p.texto)) {
+        cortesNoFim++;
+        expect(frasesInteirasDe(frases.at(-1)!, p.texto)).toBe(false);
+      }
+    }
+    expect(cortesNoFim).toBeGreaterThan(0);
+  });
+
+  it("frase do meio do pedaço real continua citável", () => {
+    const meio = pedacos
+      .flatMap((p) => frasesDe(p.texto).slice(1, -1).map((f) => [f, p.texto] as const))
+      .filter(([f]) => f.length > 40 && !abreviada(f));
+    expect(meio.length).toBeGreaterThan(10);
+    for (const [f, t] of meio) expect(frasesInteirasDe(f, t)).toBe(true);
+  });
+
+  it("o corte depois de 'Não é verdade que' não deixa citar a tese sem o 'Não'", async () => {
+    const m = await blocosDe(
+      resposta([DO_MERITO, { texto: '[CITA T1: "a cláusula arbitral imposta ao consumidor é válida."]', fontes: ["T1"] }]),
+      buscador(hitsDe("a cláusula arbitral imposta ao consumidor é válida. A ré contestou o pedido.")),
+    );
+    expect(m.blocos[1]!.texto).toBe(MARCA_DO_RETIRADO);
+  });
+
+  it("frase cortada no fim do pedaço não vira frase inteira", async () => {
+    const m = await blocosDe(
+      resposta([DO_MERITO, { texto: '[CITA T1: "Nos termos da jurisprudência pacífica."]', fontes: ["T1"] }]),
+      buscador(hitsDe("Do caso. Nos termos da jurisprudência pacífica do tribunal")),
+    );
+    expect(m.blocos[1]!.texto).toBe(MARCA_DO_RETIRADO);
+  });
+
+  it("a grafia do acervo é achada mesmo com o espaçamento e as aspas do PDF", () => {
+    expect(grafiaDoAcervo("a lei n.º 8.078/90 atribui legitimação", 'Antes. "A Lei n . º 8.078/90 atribui legitimação." Depois.')).toBe("A Lei n . º 8.078/90 atribui legitimação.");
   });
 });
 
