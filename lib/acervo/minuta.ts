@@ -152,19 +152,51 @@ const OUTRO_ALFABETO = /[Ͱ-ϿЀ-ԯ]/;
  * Forma literal, linha a linha: sem invisível, minúscula, sem aspas, espaço único e
  * nenhum espaço em volta de pontuação (o PDF põe "n . º"). A quebra de linha fica.
  */
+const ASPA = /["“”'‘’]/;
+const PONTUACAO = /[.,;:!?()[\]/\\ºª°\-–—]/;
+type Literal = { texto: string; origem: number[] };
+/**
+ * A forma literal de uma linha e, para cada caractere dela, a posição de onde ele
+ * veio na linha original — é o que deixa imprimir o trecho VALIDADO, e não "a
+ * primeira coisa parecida" (segunda revisão Sonnet: "Dizem que a cláusula é
+ * válida? … A cláusula é válida." imprimia a pergunta).
+ */
+function linhaLiteral(linha: string, base: number): Literal {
+  const texto: string[] = [];
+  const origem: number[] = [];
+  let espaco = -1;
+  for (let i = 0; i < linha.length; ) {
+    const ch = String.fromCodePoint(linha.codePointAt(i)!);
+    if (ASPA.test(ch)) {
+      i += ch.length;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (espaco < 0) espaco = i;
+      i += ch.length;
+      continue;
+    }
+    if (espaco >= 0 && texto.length > 0 && !PONTUACAO.test(ch) && !PONTUACAO.test(texto[texto.length - 1]!)) {
+      texto.push(" ");
+      origem.push(base + espaco);
+    }
+    espaco = -1;
+    // "İ" vira dois caracteres em minúscula: os dois apontam para a mesma origem.
+    for (const c of ch.toLowerCase()) {
+      texto.push(c);
+      origem.push(base + i);
+    }
+    i += ch.length;
+  }
+  return { texto: texto.join(""), origem };
+}
+/** Texto em NFC (e não NFKC: NFKC troca "º" por "o", e a citação sai com o caractere do acervo). */
+const nfc = (s: string) => invisiveis(s).normalize("NFC");
+/** Forma literal: minúscula, sem aspas, espaço único, nenhum espaço em volta de pontuação (o PDF põe "n . º"). */
 function literal(s: string): string {
-  // NFC, e não NFKC: NFKC troca "º" por "o", e a citação tem de sair com o caractere do acervo.
-  return invisiveis(s)
-    .normalize("NFC")
+  return nfc(s)
     .split(/\r?\n/)
-    .map((l) =>
-      l
-        .toLowerCase()
-        .replace(/["“”'‘’]/g, "")
-        .replace(/\s+/g, " ")
-        .replace(/\s*([.,;:!?()[\]/\\ºª°\-–—])\s*/g, "$1")
-        .trim(),
-    )
+    .map((l) => linhaLiteral(l, 0).texto)
     .join("\n");
 }
 const semFinal = (s: string) => s.replace(/[.;:!?]+$/, "");
@@ -183,51 +215,58 @@ const FIM_DE_FRASE = /[.;:!?]/;
  * verdade que | a cláusula é válida". A primeira frase do pedaço fica de fora; a
  * sobreposição entre pedaços a traz inteira no pedaço anterior.
  */
-function comecosDeFrase(texto: string): { corrido: string; comecos: Set<number> } {
-  const original = invisiveis(texto).normalize("NFC").split(/\r?\n/);
-  const linhas = literal(texto).split("\n");
+function comecosDeFrase(texto: string): { original: string; corrido: string; origem: number[]; comecos: Set<number> } {
+  const original = nfc(texto);
+  const linhasOriginais = original.split("\n");
   const comecos = new Set<number>();
-  let pos = 0;
-  linhas.forEach((l, i) => {
-    const anterior = (original[i - 1] ?? "").trim();
+  let corrido = "";
+  const origem: number[] = [];
+  let base = 0;
+  linhasOriginais.forEach((bruta, i) => {
+    const sem = bruta.replace(/\r$/, "");
+    const l = linhaLiteral(sem, base);
+    const anterior = (linhasOriginais[i - 1] ?? "").trim();
     const titulo = anterior !== "" && anterior === anterior.toUpperCase() && /\p{Lu}/u.test(anterior);
-    if (i > 0 && (titulo || FIM_DE_FRASE.test(anterior.slice(-1)))) comecos.add(pos);
-    for (let k = 0; k < l.length; k++) if (FIM_DE_FRASE.test(l[k]!) && !/\d/.test(l[k + 1] ?? "")) comecos.add(pos + k + 1);
-    pos += l.length + 1;
+    if (i > 0) {
+      corrido += " "; // a quebra de linha vira espaço no texto corrido
+      origem.push(base - 1);
+      if (titulo || FIM_DE_FRASE.test(anterior.slice(-1))) comecos.add(corrido.length);
+    }
+    const pos = corrido.length;
+    for (let k = 0; k < l.texto.length; k++) {
+      if (FIM_DE_FRASE.test(l.texto[k]!) && !/\d/.test(l.texto[k + 1] ?? "")) comecos.add(pos + k + 1);
+    }
+    corrido += l.texto;
+    origem.push(...l.origem);
+    base += bruta.length + 1;
   });
-  return { corrido: linhas.join(" "), comecos };
+  return { original, corrido, origem, comecos };
 }
 
-/** `frase` é uma ou mais frases INTEIRAS e seguidas de `texto`. */
-export function frasesInteirasDe(frase: string, texto: string): boolean {
+/**
+ * O trecho do ACERVO que é a `frase` em frases INTEIRAS e seguidas — na grafia de
+ * lá (caixa, aspas internas, pontuação final), recortado da ocorrência validada.
+ * `null` se a frase não é frases inteiras do texto.
+ */
+export function grafiaDoAcervo(frase: string, texto: string): string | null {
   const alvo = semFinal(literal(frase).replace(/\n/g, " "));
-  if (alvo === "") return false;
-  const { corrido, comecos } = comecosDeFrase(texto);
+  if (alvo === "") return null;
+  const { original, corrido, origem, comecos } = comecosDeFrase(texto);
   for (const c of comecos) {
     if (!corrido.startsWith(alvo, c)) continue;
     // Termina onde a próxima frase começa: pontuação que não é ponto de milhar, ou fim de
     // linha antes de começo. O FIM do texto, sozinho, não basta — o pedaço pode ter sido
     // cortado no meio da frase.
-    if (comecos.has(c + alvo.length + 1)) return true;
+    let fim = c + alvo.length;
+    if (!comecos.has(fim + 1)) continue;
+    while (FIM_DE_FRASE.test(corrido[fim] ?? "")) fim++; // a pontuação final de lá ("?" fica "?")
+    return original.slice(origem[c]!, origem[fim - 1]! + 1).replace(/\s+/g, " ").trim();
   }
-  return false;
+  return null;
 }
 
-const ESPACO_OU_ASPA = String.raw`[\s"“”'‘’]`;
-/**
- * A grafia do ACERVO para a frase que o modelo copiou — caixa, aspas, espaços e a
- * pontuação final de lá. Sem isto a citação imprimia o texto do modelo: "A
- * cláusula é válida?" do acervo saía "A cláusula é válida." entre aspas, com página.
- */
-export function grafiaDoAcervo(frase: string, texto: string): string | null {
-  const alvo = semFinal(literal(frase).replace(/\n/g, " "));
-  let padrao = "";
-  for (const ch of alvo) {
-    padrao += ch === " " ? `${ESPACO_OU_ASPA}+` : `${ch.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&")}${ESPACO_OU_ASPA}*`;
-  }
-  const achado = new RegExp(`${padrao}[.;:!?]*`, "iu").exec(invisiveis(texto).normalize("NFC"));
-  return achado ? achado[0].replace(/\s+/g, " ").trim() : null;
-}
+/** `frase` é uma ou mais frases INTEIRAS e seguidas de `texto`. */
+export const frasesInteirasDe = (frase: string, texto: string): boolean => grafiaDoAcervo(frase, texto) !== null;
 
 /**
  * Por que o texto próprio do modelo não pode sair, ou `null`. Não há exceção para
@@ -278,7 +317,7 @@ function unidadeNaMinuta(u: string, c: Contexto): string | null {
     const cita = u.match(CITA);
     const t = cita ? c.trechoDe.get(cita[1]!.toUpperCase()) : undefined;
     const frase = invisiveis(cita?.[2]?.trim() ?? "");
-    const grafia = t && frasesInteirasDe(frase, t.texto) ? grafiaDoAcervo(frase, t.texto) : null;
+    const grafia = t ? grafiaDoAcervo(frase, t.texto) : null;
     if (!t || !grafia) {
       c.removidas.cita_invalida += 1;
       return null;

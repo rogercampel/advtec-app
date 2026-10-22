@@ -303,6 +303,23 @@ describe("o trecho é PEDAÇO de `fatia`, cortado em qualquer ponto (quarta revi
     expect(m.blocos[1]!.texto).toBe(MARCA_DO_RETIRADO);
   });
 
+  // Revisão Sonnet: a grafia era procurada de novo por regex e saía da PRIMEIRA ocorrência parecida.
+  it.each([
+    ["frase repetida: sai a ocorrência validada, não a pergunta de antes", "A cláusula é válida.", "Do caso. Dizem que a cláusula é válida? Mas não. A cláusula é válida.", "A cláusula é válida."],
+    ["frase repetida: não sai o pedaço da frase negada", "A cláusula é válida.", "Do caso. Não é verdade que a cláusula é válida segundo a ré. Fim. A cláusula é válida.", "A cláusula é válida."],
+    ["prefixo de frase mais longa só vale onde é frase inteira", "Aplica-se a Súmula 30.", "Do caso. Aplica-se a Súmula 302 do STJ. Fim. Aplica-se a Súmula 30.", "Aplica-se a Súmula 30."],
+    ["aspa de fechamento não vaza para a citação", "a cláusula é válida", 'Do caso. "A cláusula é válida." Depois.', "A cláusula é válida."],
+    ["'İ' (dois caracteres em minúscula) não derruba a citação", "İstanbul é cidade.", "Do caso. İstanbul é cidade. Fim.", "İstanbul é cidade."],
+  ])("%s", (_, frase, texto, esperado) => {
+    expect(grafiaDoAcervo(frase, texto)).toBe(esperado);
+  });
+
+  it("muitos espaços e aspas seguidos não travam a busca", () => {
+    const t0 = Date.now();
+    grafiaDoAcervo("a b c d e f g h i j", `x. a${" ".repeat(50)}${'"'.repeat(50)}${"b.".repeat(2000)}`);
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+
   it("a grafia do acervo é achada mesmo com o espaçamento e as aspas do PDF", () => {
     expect(grafiaDoAcervo("a lei n.º 8.078/90 atribui legitimação", 'Antes. "A Lei n . º 8.078/90 atribui legitimação." Depois.')).toBe("A Lei n . º 8.078/90 atribui legitimação.");
   });
