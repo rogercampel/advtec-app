@@ -203,6 +203,39 @@ function literal(s: string): string {
 }
 const semFinal = (s: string) => s.replace(/[.;:!?]+$/, "");
 const FIM_DE_FRASE = /[.;:!?]/;
+/**
+ * O que ABRE a frase seguinte — sem os dois-pontos (0005.E3). Depois de ":" vem a
+ * fala de outro ("Alega a ré: …", "Não procede o argumento de que: …"); citá-la
+ * sozinha inverte quem afirma. Quem quiser citar depois de ":" cita a frase inteira.
+ */
+const ABRE_FRASE = /[.;!?]/;
+/**
+ * Abreviatura que NUNCA fecha frase: vem antes de nome ou de número ("Min. Fulano",
+ * "art. 5", "inc. IV"). Tratá-la como fim abria começo falso: "Vencido o Min. |
+ * Fulano, para quem a cláusula é válida" (quarta revisão).
+ */
+const ABREVIATURA_QUE_NAO_FECHA = new Set(["rel", "min", "des", "dr", "dra", "sr", "sra", "exmo", "exma", "prof", "profa", "n", "art", "arts", "inc", "al", "fl", "fls", "p", "pp", "dje", "dj", "cf", "v", "vs", "av", "ss", "ex", "sec", "séc"]);
+/** Sufixo de empresa: fecha a frase quando a palavra seguinte começa em maiúscula ("… contra a Netflix Ltda. A ré contestou."). */
+const SUFIXO_DE_EMPRESA = new Set(["ltda", "cia", "s.a"]);
+/**
+ * O ponto em `antes|.|proxima` NÃO fecha a frase? `proxima` é o primeiro caractere
+ * do texto original depois do ponto (para ver a maiúscula).
+ */
+function pontoNaoFecha(antes: string, proxima: string): boolean {
+  // "5º." e "art. 6º." fecham: o ordinal depois de algarismo não é abreviatura (º é letra para \p{L}).
+  const sem = antes.replace(/[ºª°]+$/u, "");
+  if (/\d$/.test(sem)) return false;
+  const sufixo = sem.match(/(?:^|[^\p{L}.])((?:\p{L}\.)?\p{L}+)$/u)?.[1];
+  if (sufixo && SUFIXO_DE_EMPRESA.has(sufixo)) return !/\p{Lu}/u.test(proxima);
+  const palavra = sem.match(/(\p{L}+)$/u)?.[1];
+  if (palavra === undefined) return false;
+  // Letra solta ("J.", "V.") não fecha: é ambígua com inicial de nome, e no ambíguo recusar é o lado seguro.
+  return palavra.length === 1 || ABREVIATURA_QUE_NAO_FECHA.has(palavra);
+}
+/** Título que termina em conectivo ("NÃO PROCEDE A ALEGAÇÃO DE QUE") continua na linha de baixo: não abre frase. */
+// `(^|\s)` e não `\b`: o `\b` do JS não vê letra acentuada, e "ação" terminava no "conectivo" "o".
+// Sem as letras soltas a/o/e: "ANEXO A" é título, não conectivo.
+const TERMINA_EM_CONECTIVO = /(^|\s)(que|de|da|do|das|dos|ou|as|os|em|no|na|nos|nas|por|para|com|sobre|contra|sem|ao|aos)$/;
 
 /**
  * Onde uma frase pode começar em `texto`: depois de . ; : ! ? que não esteja
@@ -228,15 +261,22 @@ function comecosDeFrase(texto: string): { original: string; corrido: string; ori
     const sem = bruta.replace(/\r$/, "");
     const l = linhaLiteral(sem, base);
     const anterior = (linhasOriginais[i - 1] ?? "").trim();
-    const titulo = anterior !== "" && anterior === anterior.toUpperCase() && /\p{Lu}/u.test(anterior);
+    const titulo =
+      anterior !== "" && anterior === anterior.toUpperCase() && /\p{Lu}/u.test(anterior) && !TERMINA_EM_CONECTIVO.test(literal(anterior));
     if (i > 0) {
       corrido += " "; // a quebra de linha vira espaço no texto corrido
       origem.push(base - 1);
-      if (titulo || FIM_DE_FRASE.test(anterior.slice(-1))) comecos.add(corrido.length);
+      const fechou =
+        ABRE_FRASE.test(anterior.slice(-1)) && !(anterior.endsWith(".") && pontoNaoFecha(literal(anterior).slice(0, -1), sem.trim().charAt(0)));
+      if (titulo || fechou) comecos.add(corrido.length);
     }
     const pos = corrido.length;
     for (let k = 0; k < l.texto.length; k++) {
-      if (FIM_DE_FRASE.test(l.texto[k]!) && !/\d/.test(l.texto[k + 1] ?? "")) comecos.add(pos + k + 1);
+      const ch = l.texto[k]!;
+      if (!ABRE_FRASE.test(ch) || /\d/.test(l.texto[k + 1] ?? "")) continue;
+      // A maiúscula seguinte só se vê no texto original: o literal está em minúscula.
+      if (ch === "." && pontoNaoFecha(l.texto.slice(0, k), original.charAt(l.origem[k + 1] ?? -1))) continue;
+      comecos.add(pos + k + 1);
     }
     corrido += l.texto;
     origem.push(...l.origem);
