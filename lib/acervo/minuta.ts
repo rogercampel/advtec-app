@@ -246,6 +246,18 @@ function comecosDeFrase(texto: string): { original: string; corrido: string; ori
 }
 
 /**
+ * Tira a aspa de fechamento antes do ponto final ("válida".) quando a de abertura
+ * ficou fora do recorte. Aspa com par dentro do recorte ('alegou "que … válida".')
+ * fica — tirá-la deixaria a de abertura sozinha.
+ */
+function semAspaSobrando(recorte: string): string {
+  const final = recorte.match(/(["”])[.;:!?]*$/u);
+  if (!final) return recorte;
+  const temPar = final[1] === '"' ? (recorte.match(/"/g) ?? []).length % 2 === 0 : recorte.includes("“");
+  return temPar ? recorte : recorte.replace(/["”](?=[.;:!?]*$)/u, "");
+}
+
+/**
  * O trecho do ACERVO que é a `frase` em frases INTEIRAS e seguidas — na grafia de
  * lá (caixa, aspas internas, pontuação final), recortado da ocorrência validada.
  * `null` se a frase não é frases inteiras do texto.
@@ -262,11 +274,7 @@ export function grafiaDoAcervo(frase: string, texto: string): string | null {
     let fim = c + alvo.length;
     if (!comecos.has(fim + 1)) continue;
     while (FIM_DE_FRASE.test(corrido[fim] ?? "")) fim++; // a pontuação final de lá ("?" fica "?")
-    const recorte = original
-      .slice(origem[c]!, origem[fim - 1]! + 1)
-      .replace(/\s+/g, " ")
-      .replace(/["”’']+(?=[.;:!?]*$)/u, "") // aspa de fechamento antes do ponto ("válida".) sem a de abertura
-      .trim();
+    const recorte = semAspaSobrando(original.slice(origem[c]!, origem[fim - 1]! + 1).replace(/\s+/g, " ")).trim();
     if (recorte !== "") return recorte;
   }
   return null;

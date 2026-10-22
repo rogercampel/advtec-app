@@ -314,6 +314,9 @@ describe("o trecho é PEDAÇO de `fatia`, cortado em qualquer ponto (quarta revi
     ["três emojis antes da frase", "A cláusula é válida.", "Do caso. 😀😀😀 Feio. A cláusula é válida. Fim.", "A cláusula é válida."],
     ["emoji dentro da frase sai inteiro", "A cláusula 😀 é válida.", "Do caso. A cláusula 😀 é válida. Fim.", "A cláusula 😀 é válida."],
     ["aspa de fechamento antes do ponto não sobra", "A cláusula é válida.", 'Do caso. "A cláusula é válida". Depois.', "A cláusula é válida."],
+    ["aspa curva de fechamento antes do ponto não sobra", "A cláusula é válida.", "Do caso. “A cláusula é válida”. Depois.", "A cláusula é válida."],
+    ["aspa com par dentro da citação fica", "A ré alegou que a cláusula é válida.", 'Do caso. A ré alegou "que a cláusula é válida". Depois.', 'A ré alegou "que a cláusula é válida".'],
+    ["aspa curva com par dentro da citação fica", "A ré alegou que a cláusula é válida.", "Do caso. A ré alegou “que a cláusula é válida”. Depois.", "A ré alegou “que a cláusula é válida”."],
   ])("%s", (_, frase, texto, esperado) => {
     expect(grafiaDoAcervo(frase, texto)).toBe(esperado);
   });
