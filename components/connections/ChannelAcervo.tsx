@@ -18,8 +18,8 @@ interface Acervo {
 /**
  * A opção por conexão da #999: guardar o acervo do histórico do número.
  *
- * Desligada por padrão: enquanto a rota não respondeu, a tela mostra `false`,
- * que é a decisão do mantenedor. A frase embaixo é a que a issue pediu — o que
+ * AdvTec: LIGADA por padrão (o original da #999 é desligada). Enquanto a rota não respondeu, a tela mostra `true`,
+ * que é a decisão do dono do AdvTec. A frase embaixo é a que a issue pediu — o que
  * passa a ficar guardado, e onde. O "onde" não pode citar o transporte pelo
  * nome (doutrina de restrição de canal), então diz "o servidor do canal".
  */
@@ -34,7 +34,7 @@ export function ChannelAcervo({ channelId }: { channelId: string }) {
     queryFn: () => apiClient.get<{ data: Acervo }>(`/api/v1/channel-sessions/${channelId}/acervo`),
     refetchOnWindowFocus: false,
   });
-  const ligado = query.data?.data.guardar_historico ?? false;
+  const ligado = query.data?.data.guardar_historico ?? true;
 
   async function trocar(valor: boolean) {
     setBusy(true);

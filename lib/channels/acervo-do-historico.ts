@@ -11,7 +11,7 @@ import { getWahaClient } from "@/lib/waha/client";
  * conexão". Opção por conexão precisa de casa própria, e a casa é
  * `channel_sessions.metadata` (jsonb, já existente): uma migration nova para
  * um booleano seria preço de schema por um dado de tela, e a issue estava sem
- * migration. A chave nasce ausente — o default é `false`, que é a decisão.
+ * migration. A chave nasce ausente — no AdvTec o ausente LIGA (ver `lerGuardarHistorico`).
  *
  * ─── Ligar vale sozinho ────────────────────────────────────────────────────
  *
@@ -38,10 +38,16 @@ import { getWahaClient } from "@/lib/waha/client";
  */
 export const GUARDAR_HISTORICO = "guardar_historico";
 
-/** `true` só com `true` explícito: a chave ausente é a decisão de não ligar. */
+/**
+ * AdvTec (fork): LIGADO por padrão — decisão do dono, 22/10/2026 ("para todos os
+ * clientes isso deve ser padrão"). O histórico só vem na vinculação (o primeiro QR),
+ * então desligado por padrão perdia o ano anterior de todo cliente que não mexesse
+ * na opção antes de conectar. Só `false` explícito desliga; a chave ausente liga.
+ * (No original, a #999 decidiu o contrário: ausente = desligado.)
+ */
 export function lerGuardarHistorico(metadata: unknown): boolean {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
-  return (metadata as Record<string, unknown>)[GUARDAR_HISTORICO] === true;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return true;
+  return (metadata as Record<string, unknown>)[GUARDAR_HISTORICO] !== false;
 }
 
 /** Leitura da opção para a tela. `null` = não achei a conexão (ou está arquivada). */
