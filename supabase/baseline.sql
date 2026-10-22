@@ -56322,6 +56322,36 @@ begin
 end;$fn$;
 revoke all on function public.fn_reply_inbound_revision() from public,anon,authenticated;
 
+-- ---- AdvTec: a marca de importado só vale do servidor (migration 9009) ----
+-- SQL idêntico à migration da AdvTec.
+create or replace function public.fn_messages_marca_de_importado()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $fn$
+declare
+  v_role text := coalesce(
+    nullif(current_setting('request.jwt.claim.role', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')::jsonb->>'role'
+  );
+begin
+  -- A marca cala os gatilhos de `messages` (9008). Só o servidor importa histórico;
+  -- usuário logado que a manda pela API perde a chave e a linha dispara como
+  -- qualquer outra.
+  if v_role is not null and v_role <> 'service_role'
+     and new.metadata is not null and new.metadata ? 'historico_importado' then
+    new.metadata := new.metadata - 'historico_importado';
+  end if;
+  return new;
+end;
+$fn$;
+revoke execute on function public.fn_messages_marca_de_importado() from public, anon, authenticated;
+
+drop trigger if exists trg_messages_marca_de_importado on public.messages;
+create trigger trg_messages_marca_de_importado
+  before insert on public.messages
+  for each row execute function public.fn_messages_marca_de_importado();
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
