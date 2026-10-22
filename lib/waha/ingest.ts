@@ -450,8 +450,8 @@ function notifyNameOf(p: WahaPayload): string | null {
   return p._data?.notifyName ?? p._data?.pushName ?? null;
 }
 
-/** Corpo textual: WAHA nem sempre preenche `body` em cartões de contato NOWEB. */
-function bodyOf(p: WahaPayload): string | null {
+/** Corpo textual: WAHA nem sempre preenche `body` em cartões de contato NOWEB. (Exportado para o importador de histórico da AdvTec.) */
+export function bodyOf(p: WahaPayload): string | null {
   if (p.body) return p.body;
   const msg = p._data?.message;
   if (!msg || typeof msg !== "object") return null;

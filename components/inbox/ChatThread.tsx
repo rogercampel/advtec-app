@@ -21,7 +21,8 @@ import { useAlterarMensagem } from "@/hooks/inbox/useAlterarMensagem";
 import { useDebugToggle } from "@/hooks/ai/useDebugToggle";
 import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
-import { capabilitiesOf, transportaMensagem, type ChannelProvider } from "@/lib/channels/capabilities";
+import { CHANNEL_PROVIDER_WAHA, capabilitiesOf, transportaMensagem, type ChannelProvider } from "@/lib/channels/capabilities";
+import { BuscarHistorico } from "./BuscarHistorico";
 import { montarCartoesDaPassagem, type CartaoDaPassagem } from "@/lib/escalacao/cartao-da-passagem";
 import type { Message, Note } from "@/lib/types/messaging";
 
@@ -112,6 +113,7 @@ export function ChatThread({
   const deleteNote = useDeleteNote(conversationId ?? "");
   const { editar, apagar, ocultar, restaurar } = useAlterarMensagem(conversationId);
   const canManage = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
+  const podeBuscarHistorico = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent;
   const canalAlteraEnviada = transportaMensagem(provider)
     && capabilitiesOf(provider as ChannelProvider).alteraMensagemEnviada;
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
@@ -358,6 +360,10 @@ export function ChatThread({
               {q.isFetchingNextPage ? t("Carregando…") : t("Carregar mais antigas")}
             </Button>
           </div>
+        )}
+        {/* AdvTec: no começo do que o CRM tem, oferecer o que o WhatsApp guardou. */}
+        {conversationId && q.isSuccess && !q.hasNextPage && provider === CHANNEL_PROVIDER_WAHA && podeBuscarHistorico && (
+          <BuscarHistorico conversationId={conversationId} />
         )}
 
         {groups.map((g) => (

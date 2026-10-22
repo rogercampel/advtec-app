@@ -24,6 +24,11 @@ describe("shouldNotifyInbound", () => {
     );
   });
 
+  it("AdvTec: pula a recebida de histórico importado (é passado, não chegou agora)", () => {
+    expect(shouldNotifyInbound({ ...base, metadata: { historico_importado: true } })).toBe(false);
+    expect(shouldNotifyInbound({ ...base, metadata: { raw_type: "chat" } })).toBe(true);
+  });
+
   it("pula outbound", () => {
     expect(shouldNotifyInbound({ ...base, direction: "outbound" })).toBe(false);
   });
