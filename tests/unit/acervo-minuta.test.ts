@@ -310,6 +310,10 @@ describe("o trecho é PEDAÇO de `fatia`, cortado em qualquer ponto (quarta revi
     ["prefixo de frase mais longa só vale onde é frase inteira", "Aplica-se a Súmula 30.", "Do caso. Aplica-se a Súmula 302 do STJ. Fim. Aplica-se a Súmula 30.", "Aplica-se a Súmula 30."],
     ["aspa de fechamento não vaza para a citação", "a cláusula é válida", 'Do caso. "A cláusula é válida." Depois.', "A cláusula é válida."],
     ["'İ' (dois caracteres em minúscula) não derruba a citação", "İstanbul é cidade.", "Do caso. İstanbul é cidade. Fim.", "İstanbul é cidade."],
+    ["emoji antes da frase não desloca o recorte", "A cláusula é válida.", "Do caso. Isso 😀 é feio. A cláusula é válida. Fim.", "A cláusula é válida."],
+    ["três emojis antes da frase", "A cláusula é válida.", "Do caso. 😀😀😀 Feio. A cláusula é válida. Fim.", "A cláusula é válida."],
+    ["emoji dentro da frase sai inteiro", "A cláusula 😀 é válida.", "Do caso. A cláusula 😀 é válida. Fim.", "A cláusula 😀 é válida."],
+    ["aspa de fechamento antes do ponto não sobra", "A cláusula é válida.", 'Do caso. "A cláusula é válida". Depois.', "A cláusula é válida."],
   ])("%s", (_, frase, texto, esperado) => {
     expect(grafiaDoAcervo(frase, texto)).toBe(esperado);
   });

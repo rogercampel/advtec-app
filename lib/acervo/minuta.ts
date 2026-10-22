@@ -181,10 +181,12 @@ function linhaLiteral(linha: string, base: number): Literal {
       origem.push(base + espaco);
     }
     espaco = -1;
+    // Uma entrada de `origem` por UNIDADE de texto (o texto corrido é indexado por
+    // unidade): emoji são duas, e contar uma deslocava o recorte (revisão Sonnet).
     // "İ" vira dois caracteres em minúscula: os dois apontam para a mesma origem.
     for (const c of ch.toLowerCase()) {
       texto.push(c);
-      origem.push(base + i);
+      for (let u = 0; u < c.length; u++) origem.push(base + i + Math.min(u, ch.length - 1));
     }
     i += ch.length;
   }
@@ -260,7 +262,12 @@ export function grafiaDoAcervo(frase: string, texto: string): string | null {
     let fim = c + alvo.length;
     if (!comecos.has(fim + 1)) continue;
     while (FIM_DE_FRASE.test(corrido[fim] ?? "")) fim++; // a pontuação final de lá ("?" fica "?")
-    return original.slice(origem[c]!, origem[fim - 1]! + 1).replace(/\s+/g, " ").trim();
+    const recorte = original
+      .slice(origem[c]!, origem[fim - 1]! + 1)
+      .replace(/\s+/g, " ")
+      .replace(/["”’']+(?=[.;:!?]*$)/u, "") // aspa de fechamento antes do ponto ("válida".) sem a de abertura
+      .trim();
+    if (recorte !== "") return recorte;
   }
   return null;
 }

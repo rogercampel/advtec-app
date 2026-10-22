@@ -29,6 +29,8 @@ const mutacoes = [
   ["frase inteira: fim em qualquer lugar", String.raw`if (!comecos.has(fim + 1)) continue;`, ""],
   ["pedaço: o fim do texto vale como fim de frase", String.raw`if (!comecos.has(fim + 1)) continue;`, String.raw`if (!comecos.has(fim + 1) && fim !== corrido.length) continue;`],
   ["pedaço: o começo do texto vale como começo de frase", String.raw`const comecos = new Set<number>();`, String.raw`const comecos = new Set<number>([0]);`],
+  ["grafia: origem por ponto de código (emoji desloca)", String.raw`for (let u = 0; u < c.length; u++) origem.push(base + i + Math.min(u, ch.length - 1));`, String.raw`origem.push(base + i);`],
+  ["grafia: aspa de fechamento antes do ponto sobra", String.raw`.replace(/["”’']+(?=[.;:!?]*$)/u, "")`, ""],
   ["grafia: pontuação final de lá não entra", String.raw`while (FIM_DE_FRASE.test(corrido[fim] ?? "")) fim++;`, ""],
   ["frase inteira: ponto de milhar termina frase", String.raw`&& !/\d/.test(l.texto[k + 1] ?? "")) comecos.add(pos + k + 1);`, String.raw`) comecos.add(pos + k + 1);`],
   ["frase inteira: toda quebra de linha é começo", String.raw`if (titulo || FIM_DE_FRASE.test(anterior.slice(-1))) comecos.add(corrido.length);`, String.raw`comecos.add(corrido.length);`],
