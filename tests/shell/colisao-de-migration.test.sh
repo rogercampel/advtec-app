@@ -124,6 +124,11 @@ GH
 chmod +x "$TMP/bin/gh"
 export PATH="$TMP/bin:$PATH"
 unset FAKE_GH_PRS FAKE_GH_PRS_FECHADOS FAKE_GH_PAI FAKE_GH_SEM_NUMERO
+# O `GITHUB_REF` da CI (`refs/pull/N/merge`) diz ao script qual PR é "o seu", e ele sai
+# da conta. Herdado aqui, o PR REAL que roda a suíte vaza para os cenários: medido em
+# 22/10/2026 no PR #7 do fork AdvTec, o "PR aberto #7" falso do caso 16 virou "o seu"
+# e sete asserções caíram. Nenhum caso define a variável; os cenários são do clone.
+unset GITHUB_REF
 
 # ── um "repositório principal" mínimo, com duas migrations já aplicadas ──────────────
 principal="$TMP/principal"; mkdir -p "$principal/supabase/migrations"
