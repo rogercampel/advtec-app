@@ -4,8 +4,9 @@
  *
  * Quem pode: `agent` em diante, fora do modo suporte só-leitura. A conversa é
  * conferida com a SESSÃO (RLS + organização ativa) antes de qualquer escrita;
- * só então o client de serviço grava. O que a importação grava e por que não
- * dispara nada está em `lib/waha/historico.ts`.
+ * só então o client de serviço grava. A porta é `lib/channels/historico-do-canal.ts`
+ * (a rota não nomeia o transporte); o que a importação grava e por que não
+ * dispara nada está documentado a partir de lá.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -16,9 +17,8 @@ import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { importarHistoricoDoCanal } from "@/lib/channels/historico-do-canal";
 import { createClient } from "@/lib/supabase/server";
-import { getWahaClient } from "@/lib/waha/client";
-import { importarHistoricoDaConversa } from "@/lib/waha/historico";
 
 export const dynamic = "force-dynamic";
 
@@ -58,10 +58,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .maybeSingle();
   if (!visivel) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
-  const waha = getWahaClient();
-  if (!waha) return fail("unavailable", recusas(t).canal_indisponivel[1], 503, { requestId });
-
-  const r = await importarHistoricoDaConversa(createAdminClient(), waha, authz.org.orgId, id);
+  const r = await importarHistoricoDoCanal(createAdminClient(), authz.org.orgId, id);
   if (!r.ok) {
     const [status, mensagem] = recusas(t)[r.motivo];
     return fail(r.motivo, mensagem, status, { requestId });

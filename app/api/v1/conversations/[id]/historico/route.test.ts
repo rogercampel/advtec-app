@@ -5,8 +5,7 @@ import { fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createClient } from "@/lib/supabase/server";
-import { getWahaClient } from "@/lib/waha/client";
-import { importarHistoricoDaConversa } from "@/lib/waha/historico";
+import { importarHistoricoDoCanal } from "@/lib/channels/historico-do-canal";
 
 import { POST } from "./route";
 
@@ -14,8 +13,7 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
-vi.mock("@/lib/waha/client", () => ({ getWahaClient: vi.fn() }));
-vi.mock("@/lib/waha/historico", () => ({ importarHistoricoDaConversa: vi.fn() }));
+vi.mock("@/lib/channels/historico-do-canal", () => ({ importarHistoricoDoCanal: vi.fn() }));
 
 /** AdvTec — a rota que traz o histórico do WhatsApp para a conversa. */
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -37,8 +35,7 @@ beforeEach(() => {
     maybeSingle: async () => ({ data: visivel ? { id: CONV } : null, error: null }),
   };
   vi.mocked(createClient).mockResolvedValue({ from: () => q } as unknown as Awaited<ReturnType<typeof createClient>>);
-  vi.mocked(getWahaClient).mockReturnValue({} as ReturnType<typeof getWahaClient>);
-  vi.mocked(importarHistoricoDaConversa).mockResolvedValue({ ok: true, importadas: 27, jaEstavam: 2, noCanal: 29 });
+  vi.mocked(importarHistoricoDoCanal).mockResolvedValue({ ok: true, importadas: 27, jaEstavam: 2, noCanal: 29 });
 });
 
 describe("POST /api/v1/conversations/[id]/historico", () => {
@@ -46,20 +43,20 @@ describe("POST /api/v1/conversations/[id]/historico", () => {
     vi.mocked(requireRole).mockResolvedValue({ ok: false, response: fail("forbidden", "Acesso negado.", 403) });
     expect((await POST(req(), ctx())).status).toBe(403);
     expect(requireRole).toHaveBeenCalledWith("agent", expect.anything());
-    expect(importarHistoricoDaConversa).not.toHaveBeenCalled();
+    expect(importarHistoricoDoCanal).not.toHaveBeenCalled();
   });
 
   it("modo suporte só-leitura não importa", async () => {
     vi.mocked(requireSupportWrite).mockResolvedValue(fail("forbidden", "Somente leitura.", 403));
     expect((await POST(req(), ctx())).status).toBe(403);
-    expect(importarHistoricoDaConversa).not.toHaveBeenCalled();
+    expect(importarHistoricoDoCanal).not.toHaveBeenCalled();
   });
 
   it("conversa que a pessoa não vê (outra organização, ou fora do escopo dela) é 404 e não importa", async () => {
     visivel = false;
     expect((await POST(req(), ctx())).status).toBe(404);
     expect(filtros).toContainEqual(["organization_id", ORG]);
-    expect(importarHistoricoDaConversa).not.toHaveBeenCalled();
+    expect(importarHistoricoDoCanal).not.toHaveBeenCalled();
   });
 
   it("id que não é uuid é 404 antes de consultar", async () => {
@@ -71,11 +68,11 @@ describe("POST /api/v1/conversations/[id]/historico", () => {
     const res = await POST(req(), ctx());
     expect(res.status).toBe(200);
     expect((await res.json()).data).toEqual({ importadas: 27, ja_estavam: 2, no_canal: 29 });
-    expect(importarHistoricoDaConversa).toHaveBeenCalledWith(expect.anything(), expect.anything(), ORG, CONV);
+    expect(importarHistoricoDoCanal).toHaveBeenCalledWith(expect.anything(), ORG, CONV);
   });
 
   it("canal fora do ar é 503, com a mensagem dizendo isso", async () => {
-    vi.mocked(importarHistoricoDaConversa).mockResolvedValue({ ok: false, motivo: "canal_indisponivel" });
+    vi.mocked(importarHistoricoDoCanal).mockResolvedValue({ ok: false, motivo: "canal_indisponivel" });
     const res = await POST(req(), ctx());
     expect(res.status).toBe(503);
   });
