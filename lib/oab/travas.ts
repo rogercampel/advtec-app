@@ -247,9 +247,10 @@ export type Contexto = {
   /**
    * Primeira resposta do agente nesta conversa: exige identificação.
    *
-   * Quem o calcula é o gate de saída (`gate-das-travas.ts`): `primeiraResposta` =
-   * `ctx.disclosure.isFirstOutbound`, lido sob o lock do número — nenhuma
-   * mensagem aceita antes para este contato. A resposta de andamento do DJEN
+   * Quem o calcula é o turno do agente (`inbound-turn.ts`), para o gate de saída
+   * (`gate-das-travas.ts`): `primeiraRespostaDoModelo` — nenhum envio aceito ESCRITO PELO
+   * MODELO antes neste contato (`primeira-resposta.ts`; template, aviso de escalação e
+   * follow-up determinístico não contam). A resposta de andamento do DJEN
    * (`lib/djen/resposta-de-andamento.ts`) calcula o seu por conta própria.
    */
   primeiraResposta: boolean;
@@ -287,11 +288,15 @@ export type Decisao =
  * com a camada `travas_oab` da organização ligada (padrão: ligada).
  *
  * ⚠️ "Ponto ÚNICO" continua sendo mentira. O que NÃO passa por aqui: o follow-up
- * determinístico e o `send_template` (texto escrito por gente, sem modelo), a pergunta
- * do roteiro e o aviso de escalação (texto do sistema), e o Testar do agente
+ * determinístico e o texto FIXO do `send_template` (escritos por gente, sem modelo; os
+ * VALORES das variáveis do template são do modelo e o turno os confere com `avalia`), a
+ * pergunta do roteiro e o aviso de escalação (texto do sistema), e o Testar do agente
  * (`preview.ts`, que monta o próprio contexto e ainda não arma o gate). O critério 4
  * vale no turno de resposta (`mensagemDoCliente` presente); no follow-up o gate só
  * confere as proibições da resposta, porque não há mensagem nova a defender.
+ *
+ * Em NENHUM caso o texto barrado é enviado. No turno, o 1º veto é erro instrutivo (o modelo
+ * reformula deferindo ao advogado); o 2º entrega a conversa ao advogado.
  *
  * Recebe a mensagem do cliente de propósito: sem entrada não há saída. É a
  * forma estrutural de sustentar o critério 4 NESTE módulo — mas o fork tem

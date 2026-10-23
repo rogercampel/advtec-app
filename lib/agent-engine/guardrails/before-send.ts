@@ -250,8 +250,20 @@ export interface GateContext {
    * de modelo. `mensagemDoCliente` é o que o cliente disse neste turno (a pergunta que a
    * resposta precisa defender); `null` = turno sem mensagem nova (follow-up), e aí o gate
    * só confere as proibições da resposta.
+   *
+   *  - `primeiraRespostaDoModelo`: nenhum envio aceito ESCRITO PELO MODELO antes neste contato
+   *    (`lib/oab/primeira-resposta.ts`) — é o que exige a identificação como máquina;
+   *  - `deferiuNoTurno`: alguma mensagem já enviada neste turno deferiu ao advogado (a resposta
+   *    em bolhas não é barrada na que vem antes da deferência);
+   *  - `injetaIdentificacao`: o turno já recusou a identificação vezes demais; o gate emenda a
+   *    frase padrão no início em vez de vetar de novo.
    */
-  travasOab?: { mensagemDoCliente: string | null };
+  travasOab?: {
+    mensagemDoCliente: string | null;
+    primeiraRespostaDoModelo: boolean;
+    deferiuNoTurno: boolean;
+    injetaIdentificacao: boolean;
+  };
   /**
    * Arma o `spinningGate`. **Ausente = ARMADO** — a direção segura aqui é a
    * oposta do `internalVocabularyEnforced` logo acima, e a assimetria é
