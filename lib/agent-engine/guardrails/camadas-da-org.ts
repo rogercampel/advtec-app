@@ -50,6 +50,9 @@ export const CAMADAS_SEMANTICAS = [
   // AdvTec: as travas da OAB no turno (`lib/oab/gate-das-travas.ts`). Custo zero; nasce
   // LIGADA — a spec 0001 proíbe conversa real sem elas.
   'travas_oab',
+  // AdvTec: a triagem jurídica no turno (`lib/triagem/`): urgência antes do modelo, ferramenta
+  // `registrar_triagem`, recusa de área e conflito. Custo zero; nasce LIGADA.
+  'triagem_juridica',
 ] as const;
 
 export type CamadaSemantica = (typeof CAMADAS_SEMANTICAS)[number];
@@ -63,6 +66,7 @@ export const SEM_ESCOLHA: EscolhaDeCamadas = {
   jailbreak: null,
   afirmacao_clinica: null,
   travas_oab: null,
+  triagem_juridica: null,
 };
 
 /**
@@ -133,6 +137,9 @@ export function escolhaDasLinhas(rows: ReadonlyArray<{ layer: string; enabled: b
  *  - `travas_oab`: LIGADA (AdvTec). É o inverso da clínica: a spec do escritório proíbe
  *    conversa real sem as travas, então a ausência de linha vale "ligada" — falha fechado.
  *
+ *  - `triagem_juridica`: LIGADA (AdvTec), pelo mesmo motivo de `travas_oab`: urgência jurídica e
+ *    conflito de interesses são deveres do escritório, não preferência. A organização pode desligar.
+ *
  * ⚠️ O worker é outro processo, com o SEU `.env`: fora dele, isto é a melhor
  * leitura disponível. Assim que a organização escolhe, a linha vence.
  */
@@ -144,6 +151,7 @@ export function padraoDasCamadasNoAmbiente(
     jailbreak: true,
     afirmacao_clinica: false,
     travas_oab: true,
+    triagem_juridica: true,
   };
 }
 
@@ -158,5 +166,6 @@ export function camadasEfetivas(
     jailbreak: camadaLigada(escolha.jailbreak, padrao.jailbreak),
     afirmacao_clinica: camadaLigada(escolha.afirmacao_clinica, padrao.afirmacao_clinica),
     travas_oab: camadaLigada(escolha.travas_oab, padrao.travas_oab),
+    triagem_juridica: camadaLigada(escolha.triagem_juridica, padrao.triagem_juridica),
   };
 }

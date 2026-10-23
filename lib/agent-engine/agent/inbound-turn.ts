@@ -228,6 +228,11 @@ import {
 } from '../guardrails/jailbreak/classifier';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { CODIGO_TRAVA_OAB, motivosDoTrace } from '@/lib/oab/gate-das-travas'; // AdvTec (fork), travas da OAB
+import type { MotivoDoAviso as MotivoDoAvisoAoCliente } from '@/lib/escalacao/aviso-ao-lead'; // AdvTec: que frase o cliente lê
+import type { MotivoDaPassagem, OrigemDaPassagem } from '@/lib/escalacao/passagem'; // AdvTec: vocabulário da passagem
+import { DEFS_DA_TRIAGEM, ferramentasDaTriagem } from '@/lib/triagem/ferramenta'; // AdvTec (fork), triagem jurídica 0001.E3
+import { detectaUrgenciasJuridicas } from '@/lib/triagem/urgencia-juridica';
+import { TRIAGEM_SYSTEM_BLOCK, desvioDaTriagem, entregaPorUrgenciaDoCliente } from '@/lib/triagem/desvio-no-turno';
 import {
   nivelFinalDaManipulacao,
   perguntarManipulacaoAoJev,
@@ -568,6 +573,7 @@ export const AGENT_TOOL_DEFS = {
       .passthrough(),
   },
   ...DEFS_DA_ADVTEC, // AdvTec (fork), spec 0010.E3
+  ...DEFS_DA_TRIAGEM, // AdvTec (fork), spec 0001.E3
 } as const;
 
 /**
@@ -1984,6 +1990,8 @@ async function executarTurnoDoAgente(
   // linhas de distância um do outro, e duas queries para a mesma pergunta viram,
   // com o tempo, duas respostas.
   const camadas = await lerCamadasDaOrg(pool, tenantId);
+  // AdvTec: a triagem jurídica (urgência antes do modelo + `registrar_triagem`). Padrão LIGADA.
+  const triagemLigada = !preview && camadaLigada(camadas.triagem_juridica, true);
   // O fuso da ORGANIZAÇÃO — o que o bloco `## Agora` usa lá embaixo, na montagem
   // da abertura. Lido aqui pela mesma razão da linha acima: uma query por turno,
   // longe do ponto de uso, para não virar duas respostas para a mesma pergunta.
@@ -2466,6 +2474,7 @@ async function executarTurnoDoAgente(
   // não depende de nenhuma feature — todo agente publicado o recebe.
   const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK];
   if (agentConfig !== null && agentConfig.casesEnabled) blocosResidentes.push(CASES_SYSTEM_BLOCK);
+  if (triagemLigada) blocosResidentes.push(TRIAGEM_SYSTEM_BLOCK); // AdvTec: chame registrar_triagem cedo
   // Spec 15 §5.2 / doutrina da Agenda: a régua é o que o agente TEM — ver
   // `blocosDeAgendaResidentes`, que decidiu isto num lugar só para poder ser
   // testada (o bloco da cadeia nomeia `crm_list_event_types`, e nomear
@@ -2549,6 +2558,50 @@ async function executarTurnoDoAgente(
       ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
     },
   });
+
+  // AdvTec — a passagem ao advogado que o PRÓPRIO CÓDIGO decide (travas da OAB, triagem
+  // jurídica), no molde do desvio "pediu humano" logo abaixo: AVISA o cliente e SÓ ENTÃO
+  // silencia (`force_human` arma o `stopGate`, que vetaria o aviso). Quem chama decide o
+  // que mais fazer no turno (marcar `passouParaAEquipe`, parar o "digitando…").
+  const entregarAoAdvogadoNoTurno = async (p: {
+    reason: string;
+    motivoCodigo: MotivoDaPassagem;
+    origem: OrigemDaPassagem;
+    motivoDoAviso: MotivoDoAvisoAoCliente;
+    tentativa: { o_que: string; desfecho: string };
+    inboxTitle?: string;
+    /** O cliente já leu algo que explica a passagem (a recusa da triagem): sem novo aviso. */
+    semAviso?: boolean;
+    severidade?: 'info' | 'warn' | 'critical';
+    log: string;
+  }): Promise<void> => {
+    const aviso = p.semAviso
+      ? ({ avisado: true } as const)
+      : await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
+          ...avisoDaEscalacao().base,
+          motivo: p.motivoDoAviso,
+        });
+    const briefing = montarBriefingDaPassagem({
+      checkpoint: previous,
+      pendentesDoCliente: inboundsPendentes,
+      motivo: { codigo: p.motivoCodigo },
+      declaradoPeloModelo: { tentativas: [p.tentativa] },
+    });
+    await performHumanHandoff(
+      pool,
+      { tenantId, leadId, conversationId: input.conversationId },
+      {
+        reason: p.reason,
+        conversationSummary: briefing.body,
+        ...(p.inboxTitle !== undefined ? { inboxTitle: p.inboxTitle } : {}),
+        ...(p.severidade !== undefined ? { severidadeDaCentral: p.severidade } : {}),
+        passagem: { origem: p.origem, motivoCodigo: p.motivoCodigo, briefing },
+        avisoAoLead: aviso,
+        log: runLog,
+      },
+    );
+    runLog.info(p.log, { kind: liveJob().kind, lead_avisado: aviso.avisado });
+  };
 
   // F4-06 (acceptance 1): detecção DETERMINÍSTICA (regex PT-BR, sem LLM) de pedido explícito
   // de atendimento humano na última mensagem do lead. Handoff é cidadão de 1ª classe (exigência
@@ -2657,6 +2710,22 @@ async function executarTurnoDoAgente(
       lead_avisado: aviso.avisado,
     });
     return; // bot silencia: a confirmação já saiu, e nada mais sai neste turno
+  }
+
+  // AdvTec — URGÊNCIA JURÍDICA (spec 0001.E3, critério 9: "notifica o advogado na hora"). Léxico, sem
+  // modelo, sobre tudo que o cliente disse e ainda não foi respondido: prazo correndo, audiência, pessoa
+  // presa, despejo. Vem DEPOIS do opt-out (quem pediu para parar é ouvido primeiro) e ANTES do modelo:
+  // nenhum token gasto. Mesmo molde dos desvios acima — avisa o cliente e SÓ ENTÃO passa ao advogado.
+  if (triagemLigada) {
+    const urgencias = inboundsPendentes.flatMap((texto) => detectaUrgenciasJuridicas(texto));
+    if (urgencias.length > 0) {
+      // TODO(#18): gravar a urgência no caso ANTES da passagem, para a ficha mostrá-la:
+      //   await registraUrgenciaNoCaso(pool, { organizationId: tenantId, contactId: leadId, conversationId: input.conversationId }, urgencias);
+      // A função nasce no #18 (lib/triagem/); ligar aqui depois do merge. Até lá a ficha lê o léxico
+      // direto do histórico (`urgenciasNoHistorico`) e nunca afirma "sem urgência".
+      await entregarAoAdvogadoNoTurno(entregaPorUrgenciaDoCliente(urgencias));
+      return; // bot silencia: o aviso já saiu, e nada mais sai neste turno
+    }
   }
 
   // ROTEIRO DE ATENDIMENTO (módulo opcional `fluxos_atendimento`, #1130). Entra
@@ -4242,6 +4311,31 @@ async function executarTurnoDoAgente(
     }),
     ...ferramentasDaAdvTec({ pool, tenantId, leadId, conversationId: input.conversationId }), // AdvTec (fork), spec 0010.E3
   };
+
+  // AdvTec — triagem jurídica (spec 0001.E3). A ferramenta ESCREVE no caso (não é read-only). Quem manda no
+  // desvio é o CÓDIGO: recusa sai pela cadeia normal (com as travas da OAB) e a passagem ao advogado
+  // acontece aqui, sem depender de o modelo chamar `request_human_handoff`.
+  if (triagemLigada) {
+    const triagem = ferramentasDaTriagem({ pool, tenantId, leadId, conversationId: input.conversationId });
+    rawTools.registrar_triagem = tool({
+      ...DEFS_DA_TRIAGEM.registrar_triagem,
+      execute: async (raw, opcoes) => {
+        // A ferramenta devolve a decisão inteira (não é stream); o cast só estreita o tipo do SDK.
+        const decisao = (await triagem.registrar_triagem.execute!(raw, opcoes)) as Parameters<typeof desvioDaTriagem>[0];
+        return desvioDaTriagem(decisao, {
+          enviarRecusa: async (texto) => {
+            const r = await rawTools.send_message!.execute!({ body: texto }, opcoes);
+            return r as { ok?: boolean; error?: { code: string } };
+          },
+          entregar: async (e) => {
+            passouParaAEquipe = true;
+            pararDigitando();
+            await entregarAoAdvogadoNoTurno(e);
+          },
+        });
+      },
+    });
+  }
 
   // F3-02: a tool nativa só entra com janela configurada e callback habilitado
   // na versão publicada. Tenant/lead vêm da ROW do job (closure), nunca do

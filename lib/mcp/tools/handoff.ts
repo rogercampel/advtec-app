@@ -255,7 +255,11 @@ function motivoDoAgenteExterno(texto: string): HandoffReason {
   return codigo === "suspected_optout" ||
     codigo === "caso_escalado" ||
     codigo === "verificacao_manual" ||
-    codigo === "trava_da_oab" // AdvTec: motivo interno do filtro de saída
+    codigo === "trava_da_oab" || // AdvTec: motivo interno do filtro de saída
+    codigo === "urgencia_juridica" || // AdvTec: motivos internos da triagem jurídica
+    codigo === "triagem_conflito" ||
+    codigo === "triagem_area" ||
+    codigo === "triagem_recusa"
     ? "requested_human"
     : codigo;
 }

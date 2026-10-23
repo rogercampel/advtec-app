@@ -36,22 +36,25 @@ describe("padrão das camadas fora do worker", () => {
       jailbreak: false,
       afirmacao_clinica: null,
       travas_oab: null,
+      triagem_juridica: null,
     });
     expect(
-      camadasEfetivas(linhas, { promessa_semantica: true, jailbreak: true, afirmacao_clinica: false, travas_oab: true }),
+      camadasEfetivas(linhas, { promessa_semantica: true, jailbreak: true, afirmacao_clinica: false, travas_oab: true, triagem_juridica: true }),
     ).toEqual({
       promessa_semantica: true,
       jailbreak: false,
       afirmacao_clinica: false,
       travas_oab: true,
+      triagem_juridica: true,
     });
     expect(
-      camadasEfetivas([], { promessa_semantica: false, jailbreak: true, afirmacao_clinica: false, travas_oab: true }),
+      camadasEfetivas([], { promessa_semantica: false, jailbreak: true, afirmacao_clinica: false, travas_oab: true, triagem_juridica: true }),
     ).toEqual({
       promessa_semantica: false,
       jailbreak: true,
       afirmacao_clinica: false,
       travas_oab: true,
+      triagem_juridica: true,
     });
   });
 
