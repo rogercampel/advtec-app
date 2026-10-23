@@ -16700,6 +16700,16 @@ export const DICIONARIO: Traducoes = {
   "A resposta ia mostrar um produto que não foi encontrado no cadastro. Confira o produto e gere de novo.": { es: "La respuesta iba a mostrar un producto que no se encontró en el registro. Revisa el producto y genera de nuevo." },
   "A sugestão tentou usar uma ação que a prévia não reconhece. Gere de novo; se repetir, revise as ferramentas ligadas no agente.": { es: "La sugerencia intentó usar una acción que la previsualización no reconoce. Genera de nuevo; si se repite, revisa las herramientas activadas en el agente." },
   "A geração da sugestão falhou, ou o contexto da conversa não pôde ser montado. Tente de novo; se repetir, o motivo ficou registrado no servidor.": { es: "La generación de la sugerencia falló, o no se pudo armar el contexto de la conversación. Inténtalo de nuevo; si se repite, el motivo quedó registrado en el servidor." },
+  // AdvTec 0005.E2 — minuta para conferência: filtro, erros da rota e ponto de IA
+  "Deixados de fora nesta busca:": { es: "Dejados fuera en esta búsqueda:" },
+  "Nenhum documento com “{termo}” apareceu nesta busca — confira o nome.": { es: "Ningún documento con “{termo}” apareció en esta búsqueda — revisa el nombre." },
+  "O filtro deixou de fora todo o acervo encontrado; confira os nomes.": { es: "El filtro dejó fuera todo el acervo encontrado; revisa los nombres." },
+  "O limite mensal de uso de IA do escritório foi atingido. Peça a um administrador para ajustar o teto em Uso de IA › Orçamento, ou aguarde a virada do mês.": { es: "Se alcanzó el límite mensual de uso de IA del despacho. Pide a un administrador que ajuste el tope en Uso de IA › Presupuesto, o espera al cambio de mes." },
+  "O modelo respondeu fora do esperado. Tente de novo.": { es: "El modelo respondió algo fuera de lo esperado. Inténtalo de nuevo." },
+  "Escrever a minuta a partir do acervo": { es: "Escribir el borrador a partir del acervo" },
+  "Escreve um rascunho de peça com os trechos do acervo do escritório mais parecidos com o pedido, marcando a origem de cada bloco, para o advogado conferir.": { es: "Escribe un borrador de escrito con los fragmentos del acervo del despacho más parecidos al pedido, marcando el origen de cada bloque, para que el abogado lo revise." },
+  "A minuta usa a assinatura de IA do escritório, a mesma da leitura de processo, e o modelo foi escolhido por medição. Trocar o modelo aqui mudaria a qualidade da minuta sem ninguém medir.": { es: "El borrador usa la suscripción de IA del despacho, la misma de la lectura de procesos, y el modelo se eligió por medición. Cambiar el modelo aquí alteraría la calidad del borrador sin que nadie la mida." },
+  "O advogado pede a minuta e recebe a mensagem de que não foi possível escrevê-la agora, ou de que o limite de uso de IA do mês acabou.": { es: "El abogado pide el borrador y recibe el mensaje de que no fue posible escribirlo ahora, o de que se agotó el límite de uso de IA del mes." },
 };
 
 /**

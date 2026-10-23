@@ -18,7 +18,7 @@ type Bloco = { texto: string; fontes: string[]; novo: boolean };
 type MinutaDaRota =
   | { situacao: "minuta"; aviso: string; blocos: Bloco[]; faltou: string[]; fontes: Array<{ id: string; citacao: string }> }
   | { situacao: "sem_base"; mensagem: string; faltou: string[] };
-type Resposta = { minuta: MinutaDaRota; arquivo: string | null };
+type Resposta = { minuta: MinutaDaRota; arquivo: string | null; deixados_de_fora?: string[]; termos_sem_efeito?: string[] };
 
 type Estado =
   | { fase: "parado" }
@@ -100,6 +100,7 @@ export function MinutaParaConferencia({ podeEscrever }: { podeEscrever: boolean 
           {estado.mensagem}
         </p>
       )}
+      {estado.fase === "pronto" && <FiltroAplicado deixados={estado.resposta.deixados_de_fora ?? []} semEfeito={estado.resposta.termos_sem_efeito ?? []} />}
       {estado.fase === "pronto" && estado.resposta.minuta.situacao === "sem_base" && (
         <div className="space-y-2 rounded-md border bg-card p-4 text-sm" data-testid="minuta-sem-base">
           <p className="font-medium">{estado.resposta.minuta.mensagem}</p>
@@ -116,6 +117,34 @@ export function MinutaParaConferencia({ podeEscrever }: { podeEscrever: boolean 
         <MinutaNaTela minuta={estado.resposta.minuta} arquivo={estado.resposta.arquivo} baixa={baixa} />
       )}
     </section>
+  );
+}
+
+/**
+ * O que o filtro "deixar de fora" fez nesta busca. Termo que não casou com nome nenhum
+ * é aviso: sem ele a peça do advogado entraria na minuta e ninguém saberia.
+ */
+function FiltroAplicado({ deixados, semEfeito }: { deixados: string[]; semEfeito: string[] }) {
+  const t = useT();
+  if (deixados.length === 0 && semEfeito.length === 0) return null;
+  return (
+    <div className="space-y-2 rounded-md border bg-card p-3 text-sm" data-testid="filtro-aplicado">
+      {deixados.length > 0 && (
+        <div>
+          <p className="font-medium">{t("Deixados de fora nesta busca:")}</p>
+          <ul className="list-disc pl-5 text-muted-foreground" data-testid="deixados-de-fora">
+            {deixados.map((nome) => (
+              <li key={nome}>{nome}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {semEfeito.map((termo) => (
+        <p key={termo} role="alert" className="font-medium text-destructive" data-testid="termo-sem-efeito">
+          {t("Nenhum documento com “{termo}” apareceu nesta busca — confira o nome.").replace("{termo}", termo)}
+        </p>
+      ))}
+    </div>
   );
 }
 

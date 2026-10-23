@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Buscador } from "@/lib/acervo/busca-por-problema";
-import { semOsDocumentos } from "@/lib/acervo/buscador-da-sessao";
+import { novoRegistroDoFiltro, semOsDocumentos } from "@/lib/acervo/buscador-da-sessao";
 import { AVISO_DA_MINUTA, FALTOU_TEXTO_NOVO, type Minuta } from "@/lib/acervo/minuta";
 import { minutaEmTexto, SEM_ORIGEM } from "@/lib/acervo/minuta-em-texto";
 
@@ -56,6 +56,50 @@ describe("deixar de fora a peça do advogado", () => {
     expect(r.ok && r.results.map((h) => (h.metadata as { nome: string }).nome)).toEqual(["Modelo.pdf"]);
   });
 
+  const nomes = (r: Awaited<ReturnType<Buscador>>) => (r.ok ? r.results.map((h) => (h.metadata as { nome: string }).nome) : r);
+  const com = (...docs: string[]) => vi.fn<Buscador>(async () => ({ ok: true, results: docs.map(hit) }) as never);
+
+  it.each([
+    ["Contestacao_Silva.pdf", "contestação silva"], // sem acento e com _ no arquivo, termo com acento e espaço
+    ["Contestação Silva.PDF", "contestacao_silva"], // o contrário
+    ["Contestação-Silva (final).docx", "CONTESTAÇÃO  SILVA"], // hífen, espaços duplos, caixa
+    ["contestação Silva.pdf", "contestação silva"], // NFD (cedilha e til soltos), como o macOS grava
+    ["Contestação Silva.pdf", "contestação silva"], // termo digitado em NFD
+    ["Contestacao.Silva.pdf", "silva pdf"], // ponto vira espaço
+  ])("o nome %j é achado pelo termo %j (normaliza os dois lados)", async (doc, termo) => {
+    const r = await semOsDocumentos(com(doc, "Modelo.pdf"), [termo])(q);
+    expect(nomes(r)).toEqual(["Modelo.pdf"]);
+  });
+
+  it("termo que não é parte do nome não tira nada", async () => {
+    expect(nomes(await semOsDocumentos(com("Contestação Silva.pdf"), ["souza"])(q))).toEqual(["Contestação Silva.pdf"]);
+  });
+
+  it("pede o triplo ao buscador e corta para o top-k DEPOIS de filtrar", async () => {
+    const muitos = vi.fn<Buscador>(async (consulta) => ({
+      ok: true,
+      results: [...Array.from({ length: 10 }, () => hit("Peça do advogado.pdf")), ...Array.from({ length: 5 }, (_, i) => hit(`Modelo ${i}.pdf`))].slice(0, consulta.topK),
+    }) as never);
+    const r = await semOsDocumentos(muitos, ["peça do advogado"])({ ...q, topK: 5 });
+    expect(muitos.mock.calls[0]![0].topK).toBe(15);
+    // Sem a folga, as 5 vagas seriam todas da peça excluída e a minuta ficaria sem nada.
+    expect(nomes(r)).toEqual(["Modelo 0.pdf", "Modelo 1.pdf", "Modelo 2.pdf", "Modelo 3.pdf", "Modelo 4.pdf"]);
+  });
+
+  it("se o filtro tirar TODOS os trechos que vieram, é falha própria — não 'sem base no acervo'", async () => {
+    const r = await semOsDocumentos(com("Contestação Silva.pdf"), ["silva"])(q);
+    expect(r).toMatchObject({ ok: false, error: { code: "tudo_deixado_de_fora" } });
+    // Busca que não trouxe nada não é culpa do filtro: continua vazia.
+    expect(await semOsDocumentos(com(), ["silva"])(q)).toEqual({ ok: true, results: [] });
+  });
+
+  it("o registro diz quais documentos saíram e quais termos tiraram algo", async () => {
+    const registro = novoRegistroDoFiltro();
+    await semOsDocumentos(com("Contestacao_Silva.pdf", "Modelo.pdf"), ["contestação silva", " souza "], registro)(q);
+    expect([...registro.documentos]).toEqual(["Contestacao_Silva.pdf"]);
+    expect([...registro.termosComEfeito]).toEqual(["contestação silva"]);
+  });
+
   it("sem termo, é a mesma busca; falha da busca passa como falha", async () => {
     expect(semOsDocumentos(busca, ["", " "])).toBe(busca);
     const caiu = vi.fn<Buscador>(async () => ({ ok: false, error: { code: "busca_falhou", message: "x" } }) as never);
@@ -93,6 +137,28 @@ describe("a tela da minuta para conferência", () => {
     fireEvent.click(screen.getByRole("button", { name: "Escrever minuta" }));
     await waitFor(() => expect(screen.getByTestId("minuta-sem-base")).toBeTruthy());
     expect(screen.queryByTestId("minuta")).toBeNull();
+  });
+
+  it("mostra o que o filtro deixou de fora e avisa do termo que não casou com nada", async () => {
+    post.mockResolvedValue({
+      data: { minuta: MINUTA, arquivo: minutaEmTexto(MINUTA, "x"), deixados_de_fora: ["Contestacao_Silva.pdf"], termos_sem_efeito: ["inicial souza"] },
+    });
+    render(<MinutaParaConferencia podeEscrever />);
+    fireEvent.change(screen.getByPlaceholderText(/contestação de reclamação trabalhista/), { target: { value: "Contestação trabalhista de horas extras." } });
+    fireEvent.change(screen.getByPlaceholderText(/contestação Silva/), { target: { value: "contestação silva, inicial souza" } });
+    fireEvent.click(screen.getByRole("button", { name: "Escrever minuta" }));
+    await waitFor(() => expect(screen.getByTestId("filtro-aplicado")).toBeTruthy());
+    expect(screen.getByTestId("deixados-de-fora").textContent).toBe("Contestacao_Silva.pdf");
+    expect(screen.getByTestId("termo-sem-efeito").textContent).toBe("Nenhum documento com “inicial souza” apareceu nesta busca — confira o nome.");
+  });
+
+  it("sem filtro nenhum, a caixa do filtro não aparece", async () => {
+    post.mockResolvedValue({ data: { minuta: MINUTA, arquivo: null, deixados_de_fora: [], termos_sem_efeito: [] } });
+    render(<MinutaParaConferencia podeEscrever />);
+    fireEvent.change(screen.getByPlaceholderText(/contestação de reclamação trabalhista/), { target: { value: "Contestação trabalhista de horas extras." } });
+    fireEvent.click(screen.getByRole("button", { name: "Escrever minuta" }));
+    await waitFor(() => expect(screen.getByTestId("minuta")).toBeTruthy());
+    expect(screen.queryByTestId("filtro-aplicado")).toBeNull();
   });
 
   it("quem só vê não escreve", () => {

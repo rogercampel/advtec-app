@@ -37,7 +37,11 @@ import { alcance, arestas, arquivosDeProducao, rel } from "./_grafo-de-importaca
  *     limite declarado abaixo, decisão da 0002);
  *   - devolve a minuta e o texto do arquivo SÓ para quem pediu, na resposta HTTP;
  *     não grava, não enfileira, não chama canal. O advogado baixa no navegador.
- * O braço "ninguém que usa a minuta alcança rede fora da lista" agora examina a rota.
+ * Os braços de rede examinam o que a rota ALCANÇA e também o PRÓPRIO arquivo dela
+ * (`alcance()` exclui o ponto de partida: sem o segundo passo, um `fetch(` escrito
+ * direto na rota passava — achado de revisão em 23/10/2026). A checagem de nomes de
+ * saída cobre `minuta.ts`, `minuta-em-texto.ts` (que só importa o TIPO da minuta e por
+ * isso o grafo não o vê como usuário) e cada importador.
  * A TRAVA continua: ela aceita exatamente esta rota. O próximo arquivo de produção
  * que importar a minuta fica vermelho e obriga a reler esta prova de novo.
  *
@@ -60,10 +64,15 @@ import { alcance, arestas, arquivosDeProducao, rel } from "./_grafo-de-importaca
  * ganhar `export function enviaMinuta`; uma rota nova importar a minuta e
  * `lib/email/resend`; o aviso perder "a revisão é do advogado"; o resolvedor do grafo
  * deixar de achar arquivo (os controles positivos ficam vermelhos).
+ * MUTAÇÃO (23/10/2026, três, todas acusadas, desfeitas): `await fetch("https://x")` escrito direto
+ * em `app/api/v1/acervo/minutas/route.ts`; `export function enviaMinuta` em `minuta-em-texto.ts`;
+ * `const enviaPorEmail` dentro da rota.
  */
 
 const RAIZ = process.cwd();
 const MINUTA = join(RAIZ, "lib/acervo/minuta.ts");
+/** Escreve o arquivo da minuta; só importa o TIPO dela, então o grafo de runtime não o liga a `MINUTA`. */
+const MINUTA_EM_TEXTO = join(RAIZ, "lib/acervo/minuta-em-texto.ts");
 
 /** Formas de chamada de rede reconhecíveis no código do repositório. */
 const REDE = /\bfetch\(|\bfetchComTeto\(|\bnew\s+(?:Resend|WebSocket)\b|\.sendNotification\(|\bgoogle\.calendar\(|\bnodemailer\b|\baxios\b|\bhttps?\.request\(|\bXMLHttpRequest\b|\bsendBeacon\(|\.functions\.invoke\(|from\s+["'](?:undici|got|ky|node-fetch|cross-fetch)["']|from\s+["'](?:node:)?(?:http|https|tls|dgram|child_process)["']|require\(\s*["'](?:node:)?(?:http|https|tls|net|child_process)["']\s*\)/;
@@ -110,6 +119,15 @@ function saidasAlcancadas(arquivo: string): string[] {
     if (falaComARede(f) && !(rel(f) in REDE_PERMITIDA)) achados.push(caminho.map(rel).join(" → "));
   }
   return achados;
+}
+
+/**
+ * `saidasAlcancadas` mais o PRÓPRIO `arquivo`: `alcance()` exclui o ponto de partida, e a
+ * rota que usa a minuta é justamente onde uma chamada de rede escrita à mão sairia calada.
+ */
+function saidasDe(arquivo: string): string[] {
+  const proprio = falaComARede(arquivo) && !(rel(arquivo) in REDE_PERMITIDA) ? [`${rel(arquivo)} (o próprio arquivo)`] : [];
+  return [...proprio, ...saidasAlcancadas(arquivo)];
 }
 
 /** Todo arquivo de produção que alcança `alvo` em runtime. */
@@ -162,8 +180,16 @@ describe("controles: a varredura enxerga o que diz enxergar", () => {
     expect(saidas.some((c) => c.endsWith("lib/waha/client.ts"))).toBe(true);
   });
 
-  it("o reverso acha quem usa: o cliente do WhatsApp tem quem o importe", () => {
+  // Varre `app`, `lib`, `components`, `workers`, `scripts` e `hooks` inteiros: lento sob carga (16 s medido).
+  it("o reverso acha quem usa: o cliente do WhatsApp tem quem o importe", { timeout: 60_000 }, () => {
     expect(quemUsa(join(RAIZ, "lib/waha/client.ts")).length).toBeGreaterThan(0);
+  });
+
+  it("o controle da checagem do próprio arquivo: `saidasDe` acusa um arquivo que fala com a rede mesmo sem importar nada", () => {
+    // `lib/waha/client.ts` chama `fetch(`: como PONTO DE PARTIDA ele não aparece em `alcance()`, e `saidasDe` o acusa.
+    const proprio = join(RAIZ, "lib/waha/client.ts");
+    expect(saidasAlcancadas(proprio).some((c) => c === rel(proprio))).toBe(false);
+    expect(saidasDe(proprio)).toContain(`${rel(proprio)} (o próprio arquivo)`);
   });
 
   it.each(["protocolaPeca", "peticionaNoPje", "assinaDocumento", "enviaMinuta", "enviarPeca", "sendDraft", "exportaParaSistema", "uploadPeca", "disparaEmail", "encaminhaAoCliente"])(
@@ -201,12 +227,13 @@ describe("TRAVA DE RELEITURA — quem usa a minuta em produção foi relido, um 
 });
 
 describe("critério 6 — nenhum caminho tira a minuta do escritório", () => {
-  it("a minuta não alcança chamada de rede fora da lista permitida", () => {
-    expect(saidasAlcancadas(MINUTA)).toEqual([]);
+  it("a minuta e o arquivo que a escreve não falam com a rede nem alcançam chamada de rede fora da lista permitida", () => {
+    expect(saidasDe(MINUTA)).toEqual([]);
+    expect(saidasDe(MINUTA_EM_TEXTO)).toEqual([]);
   });
 
-  it("ninguém que usa a minuta alcança chamada de rede fora da lista permitida", () => {
-    const infratores = quemUsa(MINUTA).flatMap((f) => saidasAlcancadas(f).map((c) => `${rel(f)}: ${c}`));
+  it("ninguém que usa a minuta fala com a rede, nem alcança chamada de rede fora da lista permitida", () => {
+    const infratores = quemUsa(MINUTA).flatMap((f) => saidasDe(f).map((c) => `${rel(f)}: ${c}`));
     expect(infratores).toEqual([]);
   });
 
@@ -218,8 +245,10 @@ describe("critério 6 — nenhum caminho tira a minuta do escritório", () => {
     }
   });
 
-  it("nenhuma função ou variável da minuta é ato de saída (protocolar, enviar, assinar, exportar…)", () => {
-    expect(identificadores(readFileSync(MINUTA, "utf8")).filter(ehNomeDeSaida)).toEqual([]);
+  it("nenhuma função ou variável da minuta, do arquivo dela e de quem a usa é ato de saída (protocolar, enviar, assinar, exportar…)", () => {
+    const arquivos = [MINUTA, MINUTA_EM_TEXTO, ...quemUsa(MINUTA)];
+    const achados = arquivos.flatMap((f) => identificadores(readFileSync(f, "utf8")).filter(ehNomeDeSaida).map((n) => `${rel(f)}: ${n}`));
+    expect(achados).toEqual([]);
   });
 });
 
