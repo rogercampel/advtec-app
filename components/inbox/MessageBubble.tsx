@@ -125,6 +125,14 @@ export function MessageBubble({
     diasDaRetencao !== null
       ? t("Mídia apagada pela política de retenção ({n} dias)").replace("{n}", String(diasDaRetencao))
       : t("Mídia apagada pela política de retenção.");
+  // AdvTec: o histórico importado do WhatsApp traz o tipo e a legenda, não o arquivo
+  // (a importação não baixa mídia antiga). Sem este aviso, um documento sem legenda
+  // virava bolha vazia — visto no teste de fumaça de 22/10/2026.
+  const midiaNaoImportada =
+    !hasMedia &&
+    !mediaExpirada &&
+    (message.metadata as Record<string, unknown> | null)?.historico_importado === true &&
+    ["image", "video", "audio", "document", "sticker"].includes(message.type);
   const isContact = message.type === "contact";
   // Pino com coordenadas: o cartão substitui o corpo, que é só o mesmo link em texto.
   const localizacao = localizacaoDaMensagem(message);
@@ -416,6 +424,12 @@ export function MessageBubble({
             {!hasMedia && mediaExpirada && (
               <div className={cn(message.body && "mb-1")}>
                 <MediaUnavailable kind={avisoDeExpiracao} />
+              </div>
+            )}
+
+            {midiaNaoImportada && (
+              <div className={cn(message.body && "mb-1")}>
+                <MediaUnavailable kind={t("Arquivo não trazido do WhatsApp na importação")} />
               </div>
             )}
 

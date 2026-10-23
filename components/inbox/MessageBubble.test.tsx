@@ -59,6 +59,21 @@ function msg(over: Partial<Message> = {}): Message {
   };
 }
 
+describe("MessageBubble — mídia do histórico importado (AdvTec)", () => {
+  it("documento importado sem arquivo nem legenda diz que o arquivo não veio, em vez de bolha vazia", () => {
+    render(<MessageBubble message={msg({ type: "document", body: null, media_url: null, media_mime: null, metadata: { historico_importado: true } })} />);
+    expect(screen.getByText("Arquivo não trazido do WhatsApp na importação")).toBeTruthy();
+  });
+
+  it("mensagem de texto importada não ganha o aviso, nem mídia que chegou pelo webhook", () => {
+    const { unmount } = render(<MessageBubble message={msg({ type: "text", body: "Oi", metadata: { historico_importado: true } })} />);
+    expect(screen.queryByText("Arquivo não trazido do WhatsApp na importação")).toBeNull();
+    unmount();
+    render(<MessageBubble message={msg({ type: "document", body: null, media_url: null, metadata: {} })} />);
+    expect(screen.queryByText("Arquivo não trazido do WhatsApp na importação")).toBeNull();
+  });
+});
+
 describe("MessageBubble — ações sobre mensagem própria", () => {
   it("edita texto recente e confirma a exclusão para todos", async () => {
     const user = userEvent.setup();

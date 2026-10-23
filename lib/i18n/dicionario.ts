@@ -16305,6 +16305,7 @@ export const DICIONARIO: Traducoes = {
   "O contato não tem número de WhatsApp para buscar o histórico.": { es: "El contacto no tiene número de WhatsApp para buscar el historial." },
   "O servidor do WhatsApp não respondeu. Tente de novo em instantes.": { es: "El servidor de WhatsApp no respondió. Intente de nuevo en unos instantes." },
   "Muitas buscas seguidas no WhatsApp. Tente em um minuto.": { es: "Demasiadas búsquedas seguidas en WhatsApp. Intente en un minuto." },
+  "Arquivo não trazido do WhatsApp na importação": { es: "Archivo no traído de WhatsApp en la importación" },
   // AdvTec 0001.E4 — ficha do caso
   "Caso sem título": { es: "Caso sin título" },
   "Fichas dos casos": { es: "Fichas de los casos" },
