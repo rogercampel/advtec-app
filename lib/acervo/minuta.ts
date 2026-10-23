@@ -47,6 +47,8 @@ export const SEM_BASE = "Não há base no acervo do escritório para esta peça.
 export const MARCA_DO_RETIRADO = "[A COMPLETAR: trecho retirado — cita julgado, lei, número ou data sem fonte literal no acervo]";
 export const FALTOU_RETIRADOS =
   "Há trechos retirados, marcados [A COMPLETAR]: citavam julgado, lei, número ou data sem fonte literal no acervo do escritório.";
+export const FALTOU_TEXTO_NOVO =
+  "Há blocos marcados como texto novo: escritos sem apoio em peça do escritório. Confira cada um antes de usar.";
 
 /** Mais trechos que a pesquisa (8): a minuta precisa de estrutura, não só do argumento. */
 export const TRECHOS_DA_MINUTA = 12;
@@ -364,7 +366,18 @@ export function unidades(texto: string): string[] {
 
 const CITA = /^\[CITA\s+(T\d+)\s*:\s*["“]([\s\S]+?)["”]\s*\]$/i;
 
-type Contexto = { trechoDe: Map<string, { texto: string; citacao: string }>; removidas: RemovidasDaMinuta };
+type Contexto = {
+  trechoDe: Map<string, { texto: string; citacao: string }>;
+  removidas: RemovidasDaMinuta;
+  /** Lacunas que o modelo deixou no texto dos BLOCOS (0005.E4); fora deles, `undefined`. */
+  lacunas?: string[];
+};
+
+/** "[A COMPLETAR: x]" → "x"; "[NOME DO RÉU]" → "NOME DO RÉU"; colchete sem par fica como está. */
+function oQueFalta(u: string): string {
+  const dentro = /^\[[^[\]]*\]$/.test(u) ? u.slice(1, -1).replace(/^\s*a\s+completar\b\s*:?\s*/i, "").trim() : "";
+  return dentro || u.trim();
+}
 
 /** Uma unidade como sai na minuta, ou `null` se vira a marca. */
 function unidadeNaMinuta(u: string, c: Contexto): string | null {
@@ -385,6 +398,9 @@ function unidadeNaMinuta(u: string, c: Contexto): string | null {
     c.removidas[motivo] += 1;
     return null;
   }
+  // Colchete no texto próprio do modelo é lugar a preencher, em qualquer grafia
+  // ("[A COMPLETAR]", "[PREENCHER: x]", "[NOME DO RÉU]", colchete sem par).
+  if (u.includes("[")) c.lacunas?.push(oQueFalta(invisiveis(u)));
   return invisiveis(u);
 }
 
@@ -453,6 +469,7 @@ export async function escreveMinuta(args: {
   const c: Contexto = {
     trechoDe: new Map(fontes.map((f, i) => [f.id, { texto: trechos[i]!.texto, citacao: f.citacao }])),
     removidas: { fonte_inexistente: 0, numero_no_texto: 0, cara_de_citacao: 0, cita_invalida: 0, bloco_vazio: 0 },
+    lacunas: [],
   };
   let houveRetirada = false;
 
@@ -472,6 +489,8 @@ export async function escreveMinuta(args: {
 
   // O que faltou é texto do modelo também — foi onde a primeira medição achou o REsp
   // inventado. O item fica, com a marca no lugar do que saiu.
+  const lacunas = c.lacunas!;
+  c.lacunas = undefined; // o que o modelo põe em "faltou" já está na lista
   const faltou: string[] = [];
   for (const f of lido.data.faltou) {
     if (f.trim() === "") continue;
@@ -484,5 +503,18 @@ export async function escreveMinuta(args: {
   // "Sem base" é quando o MODELO não apoiou nada no acervo. Se apoiou e a trava
   // retirou texto, a minuta sai com as marcas — dizer "sem base" seria mentir.
   if (!blocos.some((b) => !b.novo)) return { situacao: "sem_base", mensagem: SEM_BASE, faltou };
+
+  // Critério 5 (0005.E4): a lista não depende de o modelo lembrar. Lacuna deixada no
+  // texto e bloco sem fonte entram nela; vazia, só quando todo bloco tem origem.
+  // Repetido é o MESMO item (sem caixa, acento e ponto final), não item que contém o outro:
+  // "contém" fazia o aviso dos retirados engolir a lacuna "data" (revisão Sonnet).
+  const chave = (s: string) => forma(s).replace(/[\s.;:!?]+$/, "");
+  const listados = new Set(faltou.map(chave));
+  for (const item of lacunas) {
+    if (listados.has(chave(item))) continue;
+    listados.add(chave(item));
+    faltou.push(item);
+  }
+  if (blocos.some((b) => b.novo)) faltou.push(FALTOU_TEXTO_NOVO);
   return { situacao: "minuta", aviso: AVISO_DA_MINUTA, blocos, faltou, fontes, removidas: c.removidas };
 }

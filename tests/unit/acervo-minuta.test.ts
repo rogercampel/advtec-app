@@ -8,6 +8,7 @@ import {
   AVISO_DA_MINUTA,
   escreveMinuta,
   FALTOU_RETIRADOS,
+  FALTOU_TEXTO_NOVO,
   frasesInteirasDe,
   grafiaDoAcervo,
   MARCA_DO_RETIRADO,
@@ -26,6 +27,8 @@ import {
  *     não apoiou nada — se a trava retirou texto, a minuta sai com as marcas;
  *   - critério 4: citação só entra como FRASES INTEIRAS de um trecho, com a
  *     página. Pedaço não: "Súmula 30" tirado de "Súmula 302", tese sem o "Não";
+ *   - critério 5 (0005.E4): toda minuta traz o que faltou, e a lista vazia só
+ *     sai quando todo bloco tem origem;
  *   - critério 7: a minuta se declara rascunho;
  *   - critério 9: a busca é da organização de quem pede.
  */
@@ -468,6 +471,86 @@ describe("o que o código garante, sem depender do modelo", () => {
     const caiu = vi.fn<Buscador>(async () => ({ ok: false, error: { code: "embedding_falhou" } }) as unknown as Awaited<ReturnType<Buscador>>);
     expect(await escreveMinuta({ buscar: caiu, organizationId: ORG, fontesDoAcervo: ["fonte"], pedido: "x", chamar: responde("{}") })).toEqual({ situacao: "falha", codigo: "embedding_falhou" });
   });
+});
+
+describe("0005.E4 — a lista do que faltou não depende do modelo lembrar (critério 5)", () => {
+  const LACUNA = "[A COMPLETAR: qualificação do autor]";
+
+  it("bloco sem fonte entra na lista: texto novo é onde o advogado mais precisa olhar", async () => {
+    const m = await blocosDe(resposta([DO_MERITO, { texto: "Dos pedidos.", fontes: [] }]));
+    expect(m.faltou).toEqual([FALTOU_TEXTO_NOVO]);
+  });
+
+  it("lacuna deixada no texto e esquecida na lista entra nela", async () => {
+    const m = await blocosDe(resposta([DO_MERITO, { texto: `Autor: ${LACUNA}.`, fontes: ["T1"] }]));
+    expect(m.faltou).toEqual(["qualificação do autor"]);
+  });
+
+  it("lacuna que o modelo já listou não entra duas vezes, nem a repetida no texto", async () => {
+    const texto = `Autor: ${LACUNA}. Réu: ${LACUNA}.`;
+    expect((await blocosDe(resposta([DO_MERITO, { texto, fontes: ["T1"] }], ["Qualificação do autor."]))).faltou).toEqual(["Qualificação do autor."]);
+    expect((await blocosDe(resposta([DO_MERITO, { texto, fontes: ["T1"] }]))).faltou).toEqual(["qualificação do autor"]);
+  });
+
+  it("a marca do trecho retirado não vira item próprio: já está no aviso dos retirados", async () => {
+    const m = await blocosDe(resposta([DO_MERITO, { texto: "Conforme o REsp n.º 1.999.999/SP.", fontes: ["T1"] }]));
+    expect(m.faltou).toEqual([FALTOU_RETIRADOS]);
+  });
+
+  it("lacuna em qualquer grafia entra na lista, e nunca como item em branco (revisão Sonnet)", async () => {
+    const faltouDe = async (texto: string) => (await blocosDe(resposta([DO_MERITO, { texto, fontes: ["T1"] }]))).faltou;
+    expect(await faltouDe("Autor: [A COMPLETAR : endereço].")).toEqual(["endereço"]);
+    expect(await faltouDe("Autor: [PREENCHER: endereço].")).toEqual(["PREENCHER: endereço"]);
+    expect(await faltouDe("Contra [NOME DO RÉU].")).toEqual(["NOME DO RÉU"]);
+    expect(await faltouDe("Autor: [A COMPLETAR].")).toEqual(["[A COMPLETAR]"]);
+    expect(await faltouDe("Autor: [A COMPLETAR:].")).toEqual(["[A COMPLETAR:]"]);
+    expect((await faltouDe("Autor: [A COMPLETAR: endereço")).join()).toContain("endereço");
+  });
+
+  it("a marca de retirado escrita pelo próprio modelo, sem nada retirado, entra na lista", async () => {
+    expect((await blocosDe(resposta([DO_MERITO, { texto: `Autor: ${MARCA_DO_RETIRADO}.`, fontes: ["T1"] }]))).faltou).toHaveLength(1);
+  });
+
+  it("repetido é o mesmo item, não item que contém o outro (revisão Sonnet)", async () => {
+    const autor = await blocosDe(resposta([DO_MERITO, { texto: "Autor: [A COMPLETAR: autor].", fontes: ["T1"] }], ["Qualificação do autor e do réu."]));
+    expect(autor.faltou).toEqual(["Qualificação do autor e do réu.", "autor"]);
+    // O aviso dos retirados fala de "data" e "lei": não pode engolir essas lacunas.
+    const retirado = await blocosDe(resposta([DO_MERITO, { texto: "Conforme o REsp n.º 1.999.999/SP. Em [A COMPLETAR: data], pela [A COMPLETAR: lei].", fontes: ["T1"] }]));
+    expect(retirado.faltou).toEqual([FALTOU_RETIRADOS, "data", "lei"]);
+    // Colchete no item que o MODELO pôs na lista não vira um segundo item.
+    expect((await blocosDe(resposta([DO_MERITO], ["Falta o [NOME DO RÉU]."]))).faltou).toEqual(["Falta o [NOME DO RÉU]."]);
+  });
+
+  it("tudo com origem e nada a completar: a lista vazia é a resposta certa", async () => {
+    expect((await blocosDe(resposta([DO_MERITO, { texto: "Dos pedidos.", fontes: ["T1"] }]))).faltou).toEqual([]);
+  });
+
+  it("varredura: em toda minuta, lista vazia só quando todo bloco tem fonte e nenhum colchete ficou no texto", async () => {
+    const casos = [
+      ...Object.values(gravada.respostas),
+      resposta([DO_MERITO, { texto: "Dos pedidos.", fontes: [] }]),
+      resposta([DO_MERITO, { texto: `Autor: ${LACUNA}.`, fontes: ["T1"] }]),
+      resposta([DO_MERITO, { texto: "Conforme o REsp n.º 1.999.999/SP.", fontes: ["T9"] }]),
+      resposta([DO_MERITO, { texto: "Dos pedidos.", fontes: ["T1"] }]),
+      ...["[A COMPLETAR]", "[A COMPLETAR : x]", "[A COMPLETAR: x", "[PREENCHER: x]", "[NOME DO RÉU]", "[A COMPLETAR:]", MARCA_DO_RETIRADO].map((l) =>
+        resposta([DO_MERITO, { texto: `Autor: ${l}.`, fontes: ["T1"] }]),
+      ),
+    ];
+    let minutas = 0;
+    let vazias = 0;
+    for (const r of casos) {
+      const m = await minuta(r);
+      if (m.situacao !== "minuta") continue;
+      minutas++;
+      if (m.faltou.length > 0) continue;
+      vazias++;
+      // O oráculo não usa `novo` (que o próprio código calcula): lê `fontes` e o texto.
+      expect({ r, blocos: m.blocos.filter((b) => b.fontes.length === 0 || b.texto.includes("[")) }).toEqual({ r, blocos: [] });
+    }
+    expect(minutas).toBeGreaterThanOrEqual(12);
+    expect(vazias).toBeGreaterThanOrEqual(1);
+  });
+
 });
 
 /*
