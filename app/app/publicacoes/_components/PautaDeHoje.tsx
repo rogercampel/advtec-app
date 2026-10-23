@@ -314,7 +314,7 @@ function ContagemDoPrazo({ disponibilizada, prazo }: { disponibilizada: string; 
       : []),
   ];
   return (
-    <div className="space-y-1 rounded border border-dashed p-2" data-testid="contagem-sugerida">
+    <div className="space-y-1 rounded-md border border-dashed p-2" data-testid="contagem-sugerida">
       <p>
         <span className="font-medium">{t("Contagem sugerida: vence em {data}").replace("{data}", dataComDia(c.vence, t))}</span>{" "}
         <span className="text-muted-foreground">{t("· sugestão do sistema, confira antes de confirmar")}</span>
