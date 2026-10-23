@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiClient } from "@/lib/api/client";
 import { diaNoForo } from "@/lib/djen/coletar";
+import { contaPrazo } from "@/lib/djen/contagem";
 import { legivel, type PrazoLido } from "@/lib/djen/ler";
 import { JANELA_DO_VENCIDO, type LinhaDaPauta } from "@/lib/djen/pauta";
 import { useT } from "@/hooks/i18n/useT";
@@ -56,7 +57,7 @@ export function PautaDeHoje({
         </h2>
         <p className="text-sm text-muted-foreground">
           {t(
-            "Os prazos sugeridos são lidos do texto, sem contagem. Só a data confirmada por alguém do escritório aparece como vencimento. Continue com o seu controle atual enquanto o escritório confere a pauta.",
+            "A contagem sugerida é uma conta do sistema, com feriados e suspensões do tribunal fora dela. Só a data confirmada por alguém do escritório aparece como vencimento. Continue com o seu controle atual enquanto o escritório confere a pauta.",
           )}
         </p>
         {cortada && (
@@ -187,10 +188,13 @@ function LinhaDaPautaItem({ linha, podeAgir }: { linha: LinhaDaPauta; podeAgir: 
         </p>
       ) : (
         linha.prazosSugeridos.map((prazo, i) => (
-          <p key={i}>
-            <span className="font-medium">{rotuloDoPrazo(prazo, t)}</span>{" "}
-            <q className="italic text-muted-foreground">{prazo.trecho}</q>
-          </p>
+          <div key={i} className="space-y-1">
+            <p>
+              <span className="font-medium">{rotuloDoPrazo(prazo, t)}</span>{" "}
+              <q className="italic text-muted-foreground">{prazo.trecho}</q>
+            </p>
+            <ContagemDoPrazo disponibilizada={p.dataDisponibilizacao} prazo={prazo} />
+          </div>
         ))
       )}
       {podeAgir && (confirmado || linha.prazosSugeridos.length > 0) && (
@@ -207,8 +211,8 @@ function LinhaDaPautaItem({ linha, podeAgir }: { linha: LinhaDaPauta; podeAgir: 
 }
 
 /**
- * A data final é DIGITADA por quem conferiu no próprio controle — o sistema não
- * conta prazo (a contagem automática, 0006.E4, espera o gabarito do advogado).
+ * A data final é DIGITADA por quem conferiu no próprio controle. A contagem
+ * sugerida (0006.E4) NÃO pré-preenche o campo: copiar a sugestão não é conferir.
  */
 function ConfirmarPrazo({ id, corrigir }: { id: string; corrigir: boolean }) {
   const t = useT();
@@ -265,6 +269,69 @@ function ConfirmarPrazo({ id, corrigir }: { id: string; corrigir: boolean }) {
           {erro}
         </p>
       )}
+    </div>
+  );
+}
+
+const diaDaSemana = (iso: string, t: (s: string) => string) =>
+  [t("dom"), t("seg"), t("ter"), t("qua"), t("qui"), t("sex"), t("sáb")][new Date(`${iso}T12:00:00Z`).getUTCDay()];
+const dataComDia = (iso: string, t: (s: string) => string) => `${dataBr(iso)} (${diaDaSemana(iso, t)})`;
+
+/**
+ * Contagem SUGERIDA (0006.E4, critério 5): rotulada como sugestão, os avisos
+ * sempre à mostra, e a conta passo a passo em "Como foi contada".
+ */
+function ContagemDoPrazo({ disponibilizada, prazo }: { disponibilizada: string; prazo: PrazoLido }) {
+  const t = useT();
+  const c = contaPrazo(disponibilizada, prazo);
+  if (c.situacao === "sem_data") {
+    return (
+      <p className="text-muted-foreground" data-testid="contagem-sugerida">
+        {t("Sem contagem sugerida: o texto não diz quantos dias. Confira no processo.")}
+      </p>
+    );
+  }
+  const avisos = [
+    ...(c.declarada ? [] : [t("O texto não diz se são dias úteis ou corridos: contado em dias úteis, a regra geral do CPC.")]),
+    ...c.feriados.map((f) =>
+      t("{data} é feriado nacional ({nome}) e NÃO foi descontado.").replace("{data}", dataBr(f.data)).replace("{nome}", f.nome),
+    ),
+    ...(c.recesso ? [t("O prazo passa pelo recesso de 20/12 a 20/01, que NÃO foi descontado.")] : []),
+    t("Feriados locais e móveis, suspensões de expediente e prazo em dobro não entram na conta."),
+  ];
+  const passos = [
+    t("Disponibilizada no DJEN em {data}.").replace("{data}", dataComDia(c.disponibilizada, t)),
+    t("Considerada publicada no 1º dia útil seguinte: {data}.").replace("{data}", dataComDia(c.publicada, t)),
+    t("O prazo começa no 1º dia útil depois da publicação: {data}.").replace("{data}", dataComDia(c.inicio, t)),
+    (c.contagem === "util"
+      ? t("{n} dias úteis, contando o dia do início: o último é {data}.")
+      : t("{n} dias corridos, contando o dia do início: o último é {data}.")
+    )
+      .replace("{n}", String(c.dias))
+      .replace("{data}", dataComDia(c.ultimoDia, t)),
+    ...(c.vence !== c.ultimoDia
+      ? [t("Caiu em fim de semana: passa para o próximo dia útil, {data}.").replace("{data}", dataComDia(c.vence, t))]
+      : []),
+  ];
+  return (
+    <div className="space-y-1 rounded border border-dashed p-2" data-testid="contagem-sugerida">
+      <p>
+        <span className="font-medium">{t("Contagem sugerida: vence em {data}").replace("{data}", dataComDia(c.vence, t))}</span>{" "}
+        <span className="text-muted-foreground">{t("· sugestão do sistema, confira antes de confirmar")}</span>
+      </p>
+      <ul className="list-disc pl-5 text-muted-foreground">
+        {avisos.map((a) => (
+          <li key={a}>{a}</li>
+        ))}
+      </ul>
+      <details>
+        <summary className="cursor-pointer text-muted-foreground">{t("Como foi contada")}</summary>
+        <ol className="mt-1 list-decimal pl-5">
+          {passos.map((s) => (
+            <li key={s}>{s}</li>
+          ))}
+        </ol>
+      </details>
     </div>
   );
 }
