@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
-import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
@@ -28,14 +28,18 @@ export default async function FichasDosCasos() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("crm_leads")
-    .select("id, title, created_at, contacts:contact_id(name, display_name)")
+    .select("id, title, created_at, contacts:contact_id(name, display_name, phone_number)")
     .eq("organization_id", activeOrg.orgId)
     .order("created_at", { ascending: false })
     .limit(CASOS_NA_LISTA);
 
   const casos = (data ?? []).map((c) => {
-    const contato = (Array.isArray(c.contacts) ? c.contacts[0] : c.contacts) as { name: string | null; display_name: string | null } | null;
-    return { id: c.id, titulo: c.title?.trim() || t("Caso sem título"), cliente: nomeDoContato(contato), em: c.created_at };
+    const contato = (Array.isArray(c.contacts) ? c.contacts[0] : c.contacts) as
+      | { name: string | null; display_name: string | null; phone_number: string | null }
+      | null;
+    // Com contato, o rótulo da casa (nome ou telefone); "Caso sem contato" só sem contato.
+    // Visto no teste de fumaça de 22/10/2026: contato só com telefone aparecia como sem contato.
+    return { id: c.id, titulo: c.title?.trim() || t("Caso sem título"), cliente: contato ? rotuloDoContato(contato, t) : null, em: c.created_at };
   });
 
   return (
