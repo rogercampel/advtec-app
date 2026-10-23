@@ -17,7 +17,9 @@
  * (cai em "perguntar ao advogado"), nunca o contrário.
  *
  * PADRÃO quando o escritório não configurou: duas listas vazias = nenhuma
- * recusa automática, toda área vai para o advogado decidir. Idem para linha
+ * recusa automática E nenhuma passagem por causa da área: a área é só registrada
+ * (`decideArea` devolve `atende`). Urgência e conflito valem igual. Só COM config,
+ * área que ninguém decidiu vai ao advogado. Idem para linha
  * ausente, jsonb malformado e erro de banco: a leitura NUNCA lança, porque roda
  * no meio do turno do agente e um throw ali deixaria o cliente sem resposta.
  *

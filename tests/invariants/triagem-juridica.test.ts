@@ -6,6 +6,10 @@
  *   9  urgência (prazo/audiência/preso) → passa ao advogado, lida do banco, não do modelo;
  *   +  `custom_fields` do caso é MESCLADO (nunca apagado) e a nota na timeline não se repete.
  *
+ * 24/10/2026: sem config a área só é registrada; o conflito grava ids e não o nome; `registraUrgenciaNoCaso`.
+ * Os testes de banco novos NÃO foram rodados (Docker fora); a mesma lógica está coberta sem banco em
+ * `lib/triagem/registrar-triagem.test.ts`.
+ *
  * MUTAÇÕES (23/10/2026; cada uma aplicada, acusada pelo teste citado, e desfeita):
  *   - tirar `c.organization_id = $1` de `checaConflito` → "o cliente de OUTRO escritório não é conflito" acusa;
  *   - tirar `c.id <> $2` → "o próprio contato do turno não é a parte contrária" acusa;
@@ -22,8 +26,8 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { checaConflito } from "@/lib/triagem/conflito";
-import { executaRegistrarTriagem } from "@/lib/triagem/registrar-triagem";
+import { checaConflito, nomesDosContatosEmConflito } from "@/lib/triagem/conflito";
+import { executaRegistrarTriagem, registraUrgenciaNoCaso } from "@/lib/triagem/registrar-triagem";
 
 const pool = new pg.Pool({
   connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,
@@ -244,12 +248,14 @@ describe("registrar_triagem: o executor completo", () => {
     expect(d).toMatchObject({ acao: "passar_ao_advogado", motivo: "urgencia" });
   });
 
-  it("a marca do modelo só ACRESCENTA: 'nenhuma' não conta, texto de verdade conta", async () => {
+  it("a marca do modelo só ACRESCENTA: 'nenhuma' e 'não há urgência' não contam, um tipo do léxico conta", async () => {
     const a = await clienteNovo(["Fui mandado embora ontem"]);
     expect((await executaRegistrarTriagem(pool, a.quem, { area_do_direito: "Trabalhista", urgencia: "nenhuma" })).acao).toBe("seguir");
+    const a2 = await clienteNovo(["Fui mandado embora ontem"]);
+    expect((await executaRegistrarTriagem(pool, a2.quem, { area_do_direito: "Trabalhista", urgencia: "não há urgência" })).acao).toBe("seguir");
     const b = await clienteNovo(["Fui mandado embora ontem"]);
     expect(
-      await executaRegistrarTriagem(pool, b.quem, { area_do_direito: "Trabalhista", urgencia: "audiência dia 30" }),
+      await executaRegistrarTriagem(pool, b.quem, { area_do_direito: "Trabalhista", urgencia: "audiencia" }),
     ).toMatchObject({ acao: "passar_ao_advogado", motivo: "urgencia" });
   });
 
@@ -271,7 +277,16 @@ describe("registrar_triagem: o executor completo", () => {
       expect(d.conflito[0]).toMatchObject({ contactId: contatoMaria });
       expect(d.instrucao).toContain("NÃO diga ao cliente");
     }
-    expect(String((await camposDo(c.casos[0]!)).conflito_de_interesses)).toContain("Maria da Silva Souza");
+    // o campo do caso leva `true` e ids — o nome do outro cliente NÃO entra em custom_fields
+    const cf = await camposDo(c.casos[0]!);
+    expect(cf.conflito_possivel).toBe(true);
+    expect(cf.conflito_contatos).toEqual([contatoMaria]);
+    expect(Array.isArray(cf.conflito_casos) && cf.conflito_casos.length).toBe(1);
+    expect(JSON.stringify(cf)).not.toContain("Maria da Silva Souza");
+    expect(cf).not.toHaveProperty("conflito_de_interesses");
+    // quem mostra o nome ao advogado é a consulta, filtrada pela organização
+    expect(await nomesDosContatosEmConflito(pool, orgA, cf.conflito_contatos as string[])).toEqual([{ contactId: contatoMaria, nome: "Maria da Silva Souza" }]);
+    expect(await nomesDosContatosEmConflito(pool, orgB, cf.conflito_contatos as string[])).toEqual([]);
   });
 
   it("ISOLAMENTO no executor: o cliente do escritório B não trava a triagem do A", async () => {
@@ -286,10 +301,37 @@ describe("registrar_triagem: o executor completo", () => {
     expect(d).toMatchObject({ acao: "passar_ao_advogado", motivo: "area_a_decidir" });
   });
 
-  it("escritório que não configurou nada: nenhuma recusa automática, tudo vai ao advogado", async () => {
+  it("escritório que não configurou nada: a área só é registrada — não recusa e não manda ao advogado", async () => {
     const c = await clienteNovo(["Preciso de ajuda com um processo de furto"], { org: orgB });
     const d = await executaRegistrarTriagem(pool, c.quem, { area_do_direito: "Criminal" });
-    expect(d).toMatchObject({ acao: "passar_ao_advogado", motivo: "area_a_decidir" });
+    expect(d).toMatchObject({ acao: "seguir", registro: { gravado: true } });
+    expect(await camposDo(c.casos[0]!)).toMatchObject({ area_do_direito: "Criminal", triagem_decisao: "seguir" });
+  });
+
+  it("sem config a urgência e o conflito continuam valendo", async () => {
+    const u = await clienteNovo(["Meu prazo no processo vence amanhã"], { org: orgB });
+    expect(await executaRegistrarTriagem(pool, u.quem, { area_do_direito: "Trabalhista" })).toMatchObject({ motivo: "urgencia" });
+    const c = await clienteNovo(["Fui mandado embora ontem"], { org: orgB });
+    expect(await executaRegistrarTriagem(pool, c.quem, { area_do_direito: "Trabalhista", parte_contraria: "Carlos Andrade" })).toMatchObject({
+      motivo: "conflito",
+    });
+  });
+
+  it("registraUrgenciaNoCaso: mescla só a urgência e a data, sem tocar a decisão nem o resto; isolada por escritório", async () => {
+    const c = await clienteNovo(["oi"]);
+    await pool.query(
+      "update crm_leads set custom_fields = custom_fields || $2::jsonb where id = $1",
+      [c.casos[0], JSON.stringify({ triagem_decisao: "seguir", area_do_direito: "Trabalhista" })],
+    );
+    const r = await registraUrgenciaNoCaso(pool, c.quem, [{ tipo: "prazo", trecho: "meu prazo vence" }]);
+    expect(r).toEqual({ gravado: true, casoId: c.casos[0] });
+    const cf = await camposDo(c.casos[0]!);
+    expect(cf).toMatchObject({ triagem_decisao: "seguir", area_do_direito: "Trabalhista", numero_processo: "0001234-56.2026.8.26.0100" });
+    expect(String(cf.urgencia_juridica)).toContain("meu prazo vence");
+    expect(typeof cf.triagem_em).toBe("string");
+    // com a organização trocada não acha caso nenhum
+    const fora = await registraUrgenciaNoCaso(pool, { ...c.quem, organizationId: orgB }, [{ tipo: "prazo", trecho: "x" }]);
+    expect(fora.gravado).toBe(false);
   });
 
   it("o modelo diz 'Trabalhista' mas o cliente só falou de crime → não atende às cegas", async () => {

@@ -22,7 +22,8 @@ export const DEFS_DA_TRIAGEM = {
     description:
       "Triagem jurídica: chame assim que entender o assunto do cliente. Registra a área do direito, o resumo do caso (texto limpo, " +
       "sem opinião), o nome da parte contrária (a outra pessoa ou empresa) e qualquer urgência (prazo correndo, audiência marcada, " +
-      "alguém preso). Devolve o que fazer: seguir (e o que ainda falta pedir), recusar com um texto pronto, ou passar ao advogado. " +
+      "alguém preso; `urgencia` aceita `true` ou um destes tipos: preso, prazo, audiencia, despejo, liminar, alimentos_atrasados — " +
+      "qualquer outro texto, como \"sem urgência\", não conta). Devolve o que fazer: seguir (e o que ainda falta pedir), recusar com um texto pronto, ou passar ao advogado. " +
       "Obedeça o campo `instrucao`. Nunca dê orientação jurídica nem diga ao cliente se ele tem direito.",
     inputSchema: registrarTriagemSchema,
   },

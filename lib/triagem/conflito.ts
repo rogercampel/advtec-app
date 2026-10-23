@@ -78,6 +78,8 @@ export type ContatoEmConflito = {
   /** Como o escritório conhece a pessoa (`name`, senão `display_name`). */
   nome: string;
   casos: number;
+  /** Os ids dos negócios (`crm_leads`) desse contato: é o que vai para o campo do caso, no lugar do nome. */
+  casoIds: string[];
   como: ComoCombinou;
 };
 
@@ -115,8 +117,8 @@ export async function checaConflito(
   // "não sei", "" ou "???" sem letra útil: não há o que conferir.
   if (!primeiro || primeiro.length < 2) return { resultado: "sem_conflito", verificado: false };
 
-  const { rows } = await db.query<{ id: string; name: string | null; display_name: string | null; casos: number }>(
-    `select c.id, c.name, c.display_name, count(l.id)::int as casos
+  const { rows } = await db.query<{ id: string; name: string | null; display_name: string | null; casos: number; caso_ids: string[] }>(
+    `select c.id, c.name, c.display_name, count(l.id)::int as casos, array_agg(l.id order by l.id) as caso_ids
        from public.contacts c
        join public.crm_leads l
          on l.organization_id = c.organization_id and l.contact_id = c.id
@@ -136,7 +138,26 @@ export async function checaConflito(
     const comoPerfil = r.display_name ? nomesCombinam(args.nomeDaParteContraria, r.display_name) : null;
     const como = comoNome === "igual" || comoPerfil === "igual" ? "igual" : (comoNome ?? comoPerfil);
     if (!como) continue;
-    contatos.push({ contactId: r.id, nome: nomeDoContato({ name: r.name, display_name: r.display_name }) ?? "(sem nome)", casos: r.casos, como });
+    contatos.push({ contactId: r.id, nome: nomeDoContato(r) ?? "(sem nome)", casos: r.casos, casoIds: r.caso_ids, como });
   }
   return contatos.length > 0 ? { resultado: "possivel_conflito", contatos } : { resultado: "sem_conflito", verificado: true };
+}
+
+/**
+ * Os nomes por trás dos ids que a triagem gravou no caso (`conflito_contatos`). É a consulta que a TELA do advogado
+ * faz: o nome do outro cliente não mora no campo do caso (o modelo e as integrações leem `custom_fields`), mora no
+ * contato, e quem pergunta passa a organização da sessão — contato de outro escritório não volta.
+ */
+export async function nomesDosContatosEmConflito(
+  db: Consultavel,
+  organizationId: string,
+  contactIds: readonly string[],
+): Promise<Array<{ contactId: string; nome: string }>> {
+  const ids = [...new Set(contactIds)];
+  if (ids.length === 0) return [];
+  const { rows } = await db.query<{ id: string; name: string | null; display_name: string | null }>(
+    `select id, name, display_name from public.contacts where organization_id = $1 and id = any($2::uuid[])`,
+    [organizationId, ids],
+  );
+  return rows.map((r) => ({ contactId: r.id, nome: nomeDoContato(r) ?? "(sem nome)" }));
 }

@@ -1,7 +1,9 @@
 /**
  * Spec 0001.E3, critério 7 — área do direito e recusa educada, sem coletar história.
  *
- * MUTAÇÕES (23/10/2026; aplicadas, acusadas, desfeitas):
+ * MUTAÇÕES (24/10/2026, `C:/t/mut-triagem/mutar2.cjs`; aplicadas, acusadas, desfeitas):
+ *   - tirar o `if (configVazia(config)) return atende` de `decideArea` → "SEM config a área só é registrada" acusa;
+ *   - fazer `configVazia` ser verdadeira com UMA lista vazia → "COM config, área que ninguém decidiu…" acusa;
  *   - em `decideArea`, trocar `every` por `some` na linha da recusa → "criminal + trabalhista" passa a recusar e o teste de mistura acusa;
  *   - em `decideAreaDoCaso`, devolver sempre `completa` → "demitido + aluguel" deixa de atender e acusa;
  *   - tirar o `(?! ... trabalho)` do termo "delegacia" → "delegacia do trabalho" vira criminal e acusa;
@@ -14,6 +16,7 @@ import { avalia } from "@/lib/oab/travas";
 import {
   areaDoRotulo,
   classificaArea,
+  configVazia,
   decideArea,
   decideAreaDoCaso,
   textoDeRecusa,
@@ -101,10 +104,17 @@ describe("decideArea: o que o escritório faz", () => {
     const c: ConfigDeAreas = { atendidas: ["criminal"], recusadas: ["criminal"] };
     expect(decideArea(["criminal"], c)).toMatchObject({ acao: "perguntar_ao_advogado", motivo: "config_contraditoria" });
   });
-  it("sem config nenhuma área é recusada", () => {
+  it("SEM config a área só é registrada: atende, não recusa e não manda ao advogado", () => {
     for (const a of ["trabalhista", "criminal", "civel"] as const) {
-      expect(decideArea([a], CONFIG_PADRAO).acao).toBe("perguntar_ao_advogado");
+      expect(decideArea([a], CONFIG_PADRAO)).toEqual({ acao: "atende", areas: [a] });
     }
+    expect(decideArea([], CONFIG_PADRAO).acao).toBe("atende"); // nem a área não identificada vai ao advogado
+    expect(configVazia({ atendidas: [], recusadas: [] })).toBe(true);
+  });
+  it("COM config, área que ninguém decidiu continua indo ao advogado", () => {
+    expect(decideArea(["civel"], { atendidas: ["trabalhista"], recusadas: [] }).acao).toBe("perguntar_ao_advogado");
+    expect(decideArea(["civel"], { atendidas: [], recusadas: ["criminal"] }).acao).toBe("perguntar_ao_advogado");
+    expect(configVazia({ atendidas: [], recusadas: ["criminal"] })).toBe(false);
   });
 });
 
@@ -125,8 +135,8 @@ describe("decideAreaDoCaso: modelo + o que o cliente disse", () => {
   it("modelo sem rótulo conhecido e texto sem termo: advogado", () => {
     expect(decide(null, "preciso de ajuda com um assunto").acao).toBe("perguntar_ao_advogado");
   });
-  it("sem config, nada é recusado nem atendido sozinho", () => {
-    expect(decide("criminal", "fui preso em flagrante", CONFIG_PADRAO).acao).toBe("perguntar_ao_advogado");
+  it("sem config, nada é recusado: a área é registrada", () => {
+    expect(decide("criminal", "fui preso em flagrante", CONFIG_PADRAO).acao).toBe("atende");
   });
 });
 
