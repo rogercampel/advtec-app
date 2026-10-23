@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 
+import { MinutaParaConferencia } from "./_components/MinutaParaConferencia";
 import { PesquisaNoAcervo } from "./_components/PesquisaNoAcervo";
 
 export const dynamic = "force-dynamic";
@@ -20,5 +21,11 @@ export default async function AcervoPage() {
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
   const podePesquisar = (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent;
-  return <PesquisaNoAcervo podePesquisar={podePesquisar} />;
+  return (
+    <>
+      <PesquisaNoAcervo podePesquisar={podePesquisar} />
+      {/* 0005.E2 (#37): a minuta para o advogado conferir. A rota cobra o papel de novo. */}
+      <MinutaParaConferencia podeEscrever={podePesquisar} />
+    </>
+  );
 }
