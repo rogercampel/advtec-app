@@ -1,0 +1,6 @@
+{
+  "_como_preencher": "Uma linha por publicação real, com o prazo contado À MÃO pelo advogado do piloto (#66). Colunas da tabela do pedido ao advogado: processo, tribunal, disponibilizada (AAAA-MM-DD), tipo_de_ato, dias, contagem ('util' | 'corrido' | 'nao_declarada', o que o TEXTO da publicação diz), inicio e vencimento (AAAA-MM-DD, contados por ele), observacao. O teste tests/unit/djen-contagem-gabarito.test.ts roda a contagem sugerida sobre cada linha.",
+  "conferido_por": null,
+  "conferido_em": null,
+  "publicacoes": []
+}

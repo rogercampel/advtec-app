@@ -16304,6 +16304,17 @@ export const DICIONARIO: Traducoes = {
   "qui": { es: "jue" },
   "sex": { es: "vie" },
   "sáb": { es: "sáb" },
+  // AdvTec 0006.E5 — conferência da contagem
+  "Conferência da contagem": { es: "Revisión del cómputo" },
+  "Nenhum prazo confirmado ainda. A conferência começa na primeira confirmação: cada data confirmada é comparada com a contagem sugerida.": { es: "Aún no hay plazos confirmados. La revisión empieza con la primera confirmación: cada fecha confirmada se compara con el cómputo sugerido." },
+  "{n} de {total} dias em paralelo ao controle do escritório, desde {data}.": { es: "{n} de {total} días en paralelo al control del despacho, desde {data}." },
+  "{n} prazos confirmados: {a} iguais à sugestão, {e} com data errada sem aviso, {i} diferentes com aviso, {s} sem contagem possível.": { es: "{n} plazos confirmados: {a} iguales a la sugerencia, {e} con fecha errónea sin aviso, {i} distintos con aviso, {s} sin cómputo posible." },
+  "processo sem número": { es: "proceso sin número" },
+  "sugerida {s}, confirmada {c} ({d} dias)": { es: "sugerida {s}, confirmada {c} ({d} días)" },
+  "data errada sem aviso": { es: "fecha errónea sin aviso" },
+  "a sugestão avisava": { es: "la sugerencia lo avisaba" },
+  "{total} dias em paralelo sem divergência: o escritório pode começar a conversa sobre confiar na contagem.": { es: "{total} días en paralelo sin divergencias: el despacho puede empezar a hablar de confiar en el cómputo." },
+  "Só depois de {total} dias em paralelo sem divergência se conversa sobre confiar na contagem. Continue com o seu controle atual.": { es: "Solo después de {total} días en paralelo sin divergencias se habla de confiar en el cómputo. Sigue con tu control actual." },
   // AdvTec 0006.E5 — confirmação de prazo na pauta
   "Vence hoje ({n})": { es: "Vence hoy ({n})" },
   "Nenhum prazo confirmado vence hoje.": { es: "Ningún plazo confirmado vence hoy." },
