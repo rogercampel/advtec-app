@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { PublicacaoDaCaixa } from "@/lib/djen/caixa";
-import { confereContagem } from "@/lib/djen/conferencia";
+import { comparadas, confereContagem, julga, podeConversarSobreConfiar } from "@/lib/djen/conferencia";
+import { contaPrazo, type ContagemSugerida } from "@/lib/djen/contagem";
 
 /**
  * 0006.E5 (#27) e 0009.E4 (#66) — a conferência da contagem: a data que o
@@ -15,7 +16,7 @@ import { confereContagem } from "@/lib/djen/conferencia";
 
 const CINCO_UTEIS = "Manifeste-se no prazo de 5 (cinco) dias úteis.";
 const QUINZE_UTEIS = "Manifeste-se no prazo de 15 (quinze) dias úteis.";
-const CINCO_SEM_DIZER = "Manifeste-se no prazo de 5 (cinco) dias.";
+const QUINZE_SEM_DIZER = "Manifeste-se no prazo de 15 (quinze) dias.";
 const REMISSAO = "DESPACHO. Decorreu o prazo previsto no §2º do art. 903 do CPC; intime-se.";
 const DOIS_PRAZOS = "Manifeste-se no prazo de 5 (cinco) dias úteis. Após, recorra no prazo de 15 (quinze) dias úteis.";
 
@@ -54,9 +55,13 @@ describe("conferência da contagem", () => {
     expect(c.divergencias.map((d) => [d.sugerida, d.julgamento])).toEqual([["2026-11-11", "incerta"]]);
   });
 
-  it("texto que não declarou útil nem corrido também é aviso: 'incerta'", () => {
-    const c = confereContagem([pub("2026-10-22", CINCO_SEM_DIZER, "2026-11-05")], "2026-10-23");
-    expect(c.divergencias.map((d) => [d.sugerida, d.julgamento])).toEqual([["2026-10-30", "incerta"]]);
+  it("texto que não declarou útil nem corrido: confirmada ANTES da sugerida (contou corrido) é 'incerta'; depois, 'errou'", () => {
+    // disp. qui 22/10, "15 dias" sem dizer: a sugestão assume úteis → 13/11; corrido seria seg 09/11.
+    const antes = confereContagem([pub("2026-10-22", QUINZE_SEM_DIZER, "2026-11-09")], "2026-10-23");
+    expect(antes.divergencias.map((d) => [d.sugerida, d.diferenca, d.julgamento])).toEqual([["2026-11-13", -4, "incerta"]]);
+    // Contar corrido nunca dá data MAIS TARDE: depois da sugerida o aviso não explica nada.
+    const depois = confereContagem([pub("2026-10-22", QUINZE_SEM_DIZER, "2026-11-20")], "2026-10-23");
+    expect(depois.divergencias.map((d) => [d.diferenca, d.julgamento])).toEqual([[7, "errou"]]);
   });
 
   it("confirmada sem contagem possível (prazo sem número) fica fora da medição, contada à parte", () => {
@@ -93,5 +98,85 @@ describe("conferência da contagem", () => {
 
   it("nada confirmado: paralelo não começou", () => {
     expect(confereContagem([pub("2026-10-22", CINCO_UTEIS, null)], "2026-10-23")).toMatchObject({ confirmadas: 0, desde: null, diasEmParalelo: 0 });
+  });
+
+  it("a leitura cortada pelo teto de linhas é marcada", () => {
+    expect(confereContagem([], "2026-10-23").cortada).toBe(false);
+    expect(confereContagem([], "2026-10-23", { cortada: true }).cortada).toBe(true);
+  });
+});
+
+describe("julga: o aviso só vale quando explica a direção e o tamanho da diferença", () => {
+  // Sugestão com Finados (02/11) no caminho: o feriado NÃO é descontado, então só empurra a data para DEPOIS.
+  const comFeriado = contaPrazo("2026-10-20", { dias: 15, contagem: "util", trecho: "" });
+  if (comFeriado.situacao !== "sugerida") throw new Error("sem sugestão");
+
+  it.each([
+    ["2026-11-11", "acertou"],
+    ["2026-11-12", "incerta"], // +1: o escritório não contou Finados — exatamente o que o aviso diz
+    ["2026-11-14", "incerta"], // +3: o teto de um feriado
+    ["2026-11-15", "errou"], // +4: um feriado não explica
+    ["2026-11-25", "errou"], // +14
+    ["2026-10-30", "errou"], // −12
+    ["2026-11-02", "errou"], // −9
+    ["2026-11-10", "errou"], // −1: feriado só empurra para depois
+  ])("feriado no caminho, sugerida 11/11, confirmada %s → %s", (confirmada, esperado) => {
+    expect(julga(comFeriado, confirmada)).toBe(esperado);
+  });
+
+  const base: Extract<ContagemSugerida, { situacao: "sugerida" }> = { situacao: "sugerida", disponibilizada: "2026-12-18", publicada: "", inicio: "", dias: 5, contagem: "util", ultimoDia: "", vence: "2026-12-28", declarada: true, feriados: [], recesso: true };
+  it.each([
+    ["2026-12-29", "incerta"], // +1
+    ["2027-02-01", "incerta"], // +35: o teto do recesso
+    ["2027-02-02", "errou"], // +36
+    ["2026-12-27", "errou"], // −1: recesso só empurra para depois
+  ])("recesso no caminho, sugerida 28/12, confirmada %s → %s", (confirmada, esperado) => {
+    expect(julga(base, confirmada)).toBe(esperado);
+  });
+
+  it("dois feriados no caminho explicam até 6 dias", () => {
+    const dois = { ...base, recesso: false, feriados: [{ data: "2026-12-24", nome: "x" }, { data: "2026-12-25", nome: "Natal" }] };
+    expect([julga(dois, "2027-01-03"), julga(dois, "2027-01-04")]).toEqual(["incerta", "errou"]);
+  });
+
+  it("sem nenhum aviso, qualquer diferença é 'errou'", () => {
+    const limpa = { ...base, recesso: false };
+    expect([julga(limpa, "2026-12-29"), julga(limpa, "2026-12-27")]).toEqual(["errou", "errou"]);
+  });
+});
+
+describe("podeConversarSobreConfiar", () => {
+  /** n prazos confirmados e iguais à sugestão, a primeira confirmação em `desde`. */
+  const limpas = (n: number, desde: string) =>
+    Array.from({ length: n }, (_, i) => pub("2026-10-22", CINCO_UTEIS, "2026-10-30", i === 0 ? `${desde}T15:00:00Z` : "2026-10-21T15:00:00Z"));
+
+  it("30 dias e 20 comparados limpos: pode", () => {
+    const c = confereContagem(limpas(20, "2026-09-20"), "2026-10-23");
+    expect({ dias: c.diasEmParalelo, comparadas: comparadas(c), pode: podeConversarSobreConfiar(c) }).toEqual({ dias: 33, comparadas: 20, pode: true });
+  });
+
+  it("um prazo só há 31 dias: NÃO", () => {
+    const c = confereContagem(limpas(1, "2026-09-22"), "2026-10-23");
+    expect({ dias: c.diasEmParalelo, pode: podeConversarSobreConfiar(c) }).toEqual({ dias: 31, pode: false });
+  });
+
+  it("19 comparados: NÃO; 20: sim (a fronteira)", () => {
+    expect(podeConversarSobreConfiar(confereContagem(limpas(19, "2026-09-20"), "2026-10-23"))).toBe(false);
+    expect(podeConversarSobreConfiar(confereContagem(limpas(20, "2026-09-20"), "2026-10-23"))).toBe(true);
+  });
+
+  it("só 'sem contagem possível' há 31 dias: NÃO — nada foi comparado", () => {
+    const sem = Array.from({ length: 25 }, (_, i) => pub("2026-10-22", REMISSAO, "2026-11-05", i === 0 ? "2026-09-22T15:00:00Z" : "2026-10-21T15:00:00Z"));
+    const c = confereContagem(sem, "2026-10-23");
+    expect({ semSugestao: c.semSugestao, comparadas: comparadas(c), pode: podeConversarSobreConfiar(c) }).toEqual({ semSugestao: 25, comparadas: 0, pode: false });
+  });
+
+  it("uma divergência, mesmo avisada: NÃO", () => {
+    const c = confereContagem([...limpas(20, "2026-09-20"), pub("2026-10-20", QUINZE_UTEIS, "2026-11-12")], "2026-10-23");
+    expect({ divergencias: c.divergencias.length, pode: podeConversarSobreConfiar(c) }).toEqual({ divergencias: 1, pode: false });
+  });
+
+  it("leitura cortada: NÃO, por mais limpa que pareça", () => {
+    expect(podeConversarSobreConfiar(confereContagem(limpas(20, "2026-09-20"), "2026-10-23", { cortada: true }))).toBe(false);
   });
 });

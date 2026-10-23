@@ -1,6 +1,6 @@
 "use client";
 
-import { DIAS_EM_PARALELO, type Conferencia } from "@/lib/djen/conferencia";
+import { comparadas, DIAS_EM_PARALELO, MINIMO_DE_COMPARADAS, podeConversarSobreConfiar, type Conferencia } from "@/lib/djen/conferencia";
 import { useT } from "@/hooks/i18n/useT";
 
 /** `YYYY-MM-DD` → `dd/mm/aaaa`, sem passar por fuso. */
@@ -33,6 +33,11 @@ export function ConferenciaDaContagem({ conferencia: c }: { conferencia: Confere
               .replace("{total}", String(DIAS_EM_PARALELO))
               .replace("{data}", dataBr(c.desde!))}
           </p>
+          {c.cortada && (
+            <p role="alert" className="text-sm font-medium" data-testid="conferencia-cortada">
+              {t("Leitura parcial: só as {n} confirmações mais recentes.").replace("{n}", String(c.confirmadas))}
+            </p>
+          )}
           <p className="text-sm">
             {t("{n} prazos confirmados: {a} iguais à sugestão, {e} com data errada sem aviso, {i} diferentes com aviso, {s} sem contagem possível.")
               .replace("{n}", String(c.confirmadas))
@@ -40,6 +45,9 @@ export function ConferenciaDaContagem({ conferencia: c }: { conferencia: Confere
               .replace("{e}", String(erros))
               .replace("{i}", String(avisadas))
               .replace("{s}", String(c.semSugestao))}
+          </p>
+          <p className="text-sm" data-testid="comparados">
+            {t("{n} comparados (mínimo {m}).").replace("{n}", String(comparadas(c))).replace("{m}", String(MINIMO_DE_COMPARADAS))}
           </p>
           {c.divergencias.length > 0 && (
             <ul className="space-y-1 text-sm">
@@ -60,15 +68,13 @@ export function ConferenciaDaContagem({ conferencia: c }: { conferencia: Confere
             </ul>
           )}
           <p className="text-sm text-muted-foreground">
-            {c.diasEmParalelo >= DIAS_EM_PARALELO && c.divergencias.length === 0
-              ? t("{total} dias em paralelo sem divergência: o escritório pode começar a conversa sobre confiar na contagem.").replace(
-                  "{total}",
-                  String(DIAS_EM_PARALELO),
-                )
-              : t("Só depois de {total} dias em paralelo sem divergência se conversa sobre confiar na contagem. Continue com o seu controle atual.").replace(
-                  "{total}",
-                  String(DIAS_EM_PARALELO),
-                )}
+            {podeConversarSobreConfiar(c)
+              ? t("{total} dias em paralelo, {min} prazos comparados ou mais e nenhuma divergência: o escritório pode começar a conversa sobre confiar na contagem.")
+                  .replace("{total}", String(DIAS_EM_PARALELO))
+                  .replace("{min}", String(MINIMO_DE_COMPARADAS))
+              : t("Só depois de {total} dias em paralelo, com ao menos {min} prazos comparados e nenhuma divergência, se conversa sobre confiar na contagem. Continue com o seu controle atual.")
+                  .replace("{total}", String(DIAS_EM_PARALELO))
+                  .replace("{min}", String(MINIMO_DE_COMPARADAS))}
           </p>
         </>
       )}

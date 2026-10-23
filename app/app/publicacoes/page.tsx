@@ -88,7 +88,10 @@ export default async function PublicacoesPage() {
   ).map(daLinha);
   const caixa = montaCaixa(publicacoes, negocios.data ?? []);
   const pauta = montaPauta(publicacoes, negocios.data ?? [], agora);
-  const conferencia = confereContagem(((conferidas.data ?? []) as LinhaDaPublicacao[]).map(daLinha), diaNoForo(agora));
+  // Teto de linhas: lidas as mais recentes, a conferência avisa que está parcial e não fala em confiar.
+  const conferencia = confereContagem(((conferidas.data ?? []) as LinhaDaPublicacao[]).map(daLinha), diaNoForo(agora), {
+    cortada: (conferidas.data?.length ?? 0) >= LIMITE,
+  });
 
   const paraLigar: NegocioParaLigar[] = (negocios.data ?? []).map((n) => ({
     id: n.id,

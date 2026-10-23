@@ -1,5 +1,5 @@
 {
-  "_como_preencher": "Uma linha por publicação real, com o prazo contado À MÃO pelo advogado do piloto (#66). Colunas da tabela do pedido ao advogado: processo, tribunal, disponibilizada (AAAA-MM-DD), tipo_de_ato, dias, contagem ('util' | 'corrido' | 'nao_declarada', o que o TEXTO da publicação diz), inicio e vencimento (AAAA-MM-DD, contados por ele), observacao. O teste tests/unit/djen-contagem-gabarito.test.ts roda a contagem sugerida sobre cada linha.",
+  "_como_preencher": "Uma linha por publicação real, com o prazo contado À MÃO pelo advogado do piloto (#66). Colunas da tabela do pedido ao advogado: processo, tribunal, disponibilizada (AAAA-MM-DD), tipo_de_ato, dias, contagem ('util' | 'corrido' | 'nao_declarada', o que o TEXTO da publicação diz), inicio e vencimento (AAAA-MM-DD, contados por ele), observacao, e a coluna OPCIONAL texto (o texto da publicação, colado). O teste tests/unit/djen-contagem-gabarito.test.ts roda a contagem sugerida sobre cada linha. SEM texto, o gabarito prova só a aritmética (ele usa os dias e a contagem que o advogado anotou); COM texto, o teste 'a leitura bate com o gabarito' confere também que o sistema lê do texto os mesmos dias e a mesma contagem. Preencha o texto sempre que puder.",
   "conferido_por": null,
   "conferido_em": null,
   "publicacoes": []

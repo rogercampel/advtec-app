@@ -16313,8 +16313,10 @@ export const DICIONARIO: Traducoes = {
   "sugerida {s}, confirmada {c} ({d} dias)": { es: "sugerida {s}, confirmada {c} ({d} días)" },
   "data errada sem aviso": { es: "fecha errónea sin aviso" },
   "a sugestão avisava": { es: "la sugerencia lo avisaba" },
-  "{total} dias em paralelo sem divergência: o escritório pode começar a conversa sobre confiar na contagem.": { es: "{total} días en paralelo sin divergencias: el despacho puede empezar a hablar de confiar en el cómputo." },
-  "Só depois de {total} dias em paralelo sem divergência se conversa sobre confiar na contagem. Continue com o seu controle atual.": { es: "Solo después de {total} días en paralelo sin divergencias se habla de confiar en el cómputo. Sigue con tu control actual." },
+  "{total} dias em paralelo, {min} prazos comparados ou mais e nenhuma divergência: o escritório pode começar a conversa sobre confiar na contagem.": { es: "{total} días en paralelo, {min} plazos comparados o más y ninguna divergencia: el despacho puede empezar a hablar de confiar en el cómputo." },
+  "Só depois de {total} dias em paralelo, com ao menos {min} prazos comparados e nenhuma divergência, se conversa sobre confiar na contagem. Continue com o seu controle atual.": { es: "Solo después de {total} días en paralelo, con al menos {min} plazos comparados y ninguna divergencia, se habla de confiar en el cómputo. Sigue con tu control actual." },
+  "{n} comparados (mínimo {m}).": { es: "{n} comparados (mínimo {m})." },
+  "Leitura parcial: só as {n} confirmações mais recentes.": { es: "Lectura parcial: solo las {n} confirmaciones más recientes." },
   // AdvTec 0006.E5 — confirmação de prazo na pauta
   "Vence hoje ({n})": { es: "Vence hoy ({n})" },
   "Nenhum prazo confirmado vence hoje.": { es: "Ningún plazo confirmado vence hoy." },
