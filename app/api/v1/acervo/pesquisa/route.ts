@@ -14,12 +14,11 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
-import type { Buscador } from "@/lib/acervo/busca-por-problema";
+import { buscadorDaSessao } from "@/lib/acervo/buscador-da-sessao";
 import type { ProcessoNoEspelho } from "@/lib/acervo/desfecho-das-pecas";
 import { pesquisaNoAcervo } from "@/lib/acervo/pesquisa";
 import { ok, fail } from "@/lib/api/wrappers";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
-import { SemChaveDeEmbeddingError, embedText } from "@/lib/ai/embed";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -31,30 +30,6 @@ const TETO_POR_USUARIO = 12;
 const JANELA_SEGUNDOS = 60;
 
 const corpo = z.object({ problema: z.string().trim().min(3).max(1000) });
-
-type Supa = Awaited<ReturnType<typeof createClient>>;
-
-/** A busca da base pela RPC, trazendo a `metadata` — é nela que mora a origem. */
-function buscadorDaSessao(supabase: Supa): Buscador {
-  return async (q) => {
-    try {
-      const { embedding, model } = await embedText(q.query, { organizationId: q.organizationId, ponto: "embedding_consultar" });
-      const { data, error } = await supabase.rpc("fn_buscar_trechos_das_fontes", {
-        p_organization_id: q.organizationId,
-        p_source_ids: q.fontes,
-        p_embedding: `[${embedding.join(",")}]`,
-        p_k: q.topK,
-        p_threshold: q.threshold,
-        p_embedding_model: model,
-      });
-      if (error) return { ok: false, error: { code: "busca_falhou", message: error.message } };
-      return { ok: true, results: (data ?? []) as never };
-    } catch (e) {
-      if (e instanceof SemChaveDeEmbeddingError) return { ok: false, error: { code: e.code, message: e.message } };
-      return { ok: false, error: { code: "busca_falhou", message: e instanceof Error ? e.message : String(e) } };
-    }
-  };
-}
 
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
