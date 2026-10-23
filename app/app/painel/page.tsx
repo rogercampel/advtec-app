@@ -8,44 +8,37 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import {
   calculaFunil,
   DIAS_DO_PAINEL,
+  elegiveisDoFunil,
   escolheHorario,
   lerDias,
   periodoDoFunil,
   type Aviso,
   type EtapaId,
+  type Fonte,
+  type LeituraDoHorario,
   type LinhaDeCaso,
   type LinhaDeConsulta,
+  type LinhaDeConversa,
   type LinhaDeMensagem,
-  type MotivoNaoMedido,
+  type LinhaDeVinculo,
+  type Medida,
   type Passagem,
 } from "@/lib/painel/funil";
+import { lerEmPaginas, lerPorLotes, leituraVazia, type Leitura } from "@/lib/painel/leitura";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Painel de medição" };
 
-/** O PostgREST devolve no máximo ~1000 linhas por chamada; lemos em páginas e paramos no teto. */
-const TAMANHO_DA_PAGINA = 1000;
-const PAGINAS_NO_MAXIMO = 10;
-
-type Pagina<T> = PromiseLike<{ data: T[] | null }>;
-
-/** Lê tudo em páginas até acabar ou bater no teto; `truncado` diz se bateu (a contagem seria parcial). */
-async function lerEmPaginas<T>(pagina: (de: number, ate: number) => Pagina<T>): Promise<{ linhas: T[]; truncado: boolean }> {
-  const linhas: T[] = [];
-  for (let i = 0; i < PAGINAS_NO_MAXIMO; i += 1) {
-    const { data } = await pagina(i * TAMANHO_DA_PAGINA, (i + 1) * TAMANHO_DA_PAGINA - 1);
-    const lote = data ?? [];
-    linhas.push(...lote);
-    if (lote.length < TAMANHO_DA_PAGINA) return { linhas, truncado: false };
-  }
-  return { linhas, truncado: true };
-}
+/** Quantos ids vão num `in (...)` por consulta: a URL do PostgREST tem limite. */
+const IDS_POR_LOTE = 100;
 
 /**
  * PAINEL DE MEDIÇÃO — 0001.E5, critério 12. Os cinco números do funil, em lista, cada um
  * com a taxa de passagem e a definição ao lado. Lê com a SESSÃO (a RLS recorta) e filtra
- * pela organização ativa em toda consulta. As contas e as definições moram em `lib/painel/funil.ts`.
+ * pela organização ativa em toda consulta. As contas e as definições moram em `lib/painel/funil.ts`;
+ * erro, paginação e teto de leitura, em `lib/painel/leitura.ts` (leitura com erro ou parcial
+ * NUNCA vira número: a etapa diz "não medido").
  */
 export default async function PainelDeMedicao({ searchParams }: { searchParams: Promise<{ dias?: string }> }) {
   const user = await requireAuth();
@@ -59,108 +52,199 @@ export default async function PainelDeMedicao({ searchParams }: { searchParams: 
   const supabase = await createClient();
   const agora = new Date();
 
-  const { data: organizacao } = await supabase.from("organizations").select("timezone").eq("id", org).maybeSingle();
+  // O fuso é o que corta o período. Sem ele (erro ou linha invisível) NADA é medido: o corte seria um palpite.
+  const { data: organizacao, error: erroDoFuso } = await supabase.from("organizations").select("timezone").eq("id", org).maybeSingle();
+  const fusoLido = !erroDoFuso && organizacao != null;
   const periodo = periodoDoFunil(dias, agora, organizacao?.timezone);
   const desde = periodo.inicio.toISOString();
 
-  async function horariosDosAgentes() {
-    const { data: agentes } = await supabase
+  async function horariosDosAgentes(): Promise<LeituraDoHorario> {
+    const { data: agentes, error } = await supabase
       .from("ai_agents")
       .select("id, name, created_at, published_version_id")
       .eq("organization_id", org)
       .is("archived_at", null)
       .not("published_version_id", "is", null);
-    const lista = agentes ?? [];
-    if (lista.length === 0) return [];
-    const { data: linhas } = await supabase
+    if (error || agentes === null) return { ...escolheHorario([]), estado: "erro" };
+    if (agentes.length === 0) return { ...escolheHorario([]), estado: "ok" };
+    const { data: linhas, error: erroDasVersoes } = await supabase
       .from("ai_agent_versions")
       .select("id, trigger_config")
       .eq("organization_id", org)
       .in(
         "id",
-        lista.map((a) => a.published_version_id as string),
+        agentes.map((a) => a.published_version_id as string),
       );
-    const porVersao = new Map((linhas ?? []).map((v) => [v.id as string, v.trigger_config as unknown]));
-    return lista.map((a) => ({ agente: a.name as string, criadoEm: a.created_at as string, trigger_config: porVersao.get(a.published_version_id as string) }));
+    if (erroDasVersoes || linhas === null) return { ...escolheHorario([]), estado: "erro" };
+    const porVersao = new Map(linhas.map((v) => [v.id as string, v.trigger_config as unknown]));
+    const versoes = agentes.map((a) => ({
+      agente: a.name as string,
+      criadoEm: a.created_at as string,
+      trigger_config: porVersao.get(a.published_version_id as string),
+    }));
+    return { ...escolheHorario(versoes), estado: "ok" };
   }
 
-  const [mensagens, casos, consultas, versoes] = await Promise.all([
-    lerEmPaginas<LinhaDeMensagem>((de, ate) =>
-      supabase
-        .from("messages")
-        .select("conversation_id, created_at, direction, type")
-        .eq("organization_id", org)
-        .eq("direction", "inbound")
-        .gte("created_at", desde)
-        .order("created_at", { ascending: true })
-        .range(de, ate),
-    ),
-    lerEmPaginas<LinhaDeCaso>((de, ate) =>
-      supabase
-        .from("crm_leads")
-        .select("id, status, custom_fields, contact_id, created_at")
-        .eq("organization_id", org)
-        .gte("created_at", desde)
-        .order("created_at", { ascending: true })
-        .range(de, ate),
-    ),
-    lerEmPaginas<LinhaDeConsulta>((de, ate) =>
-      supabase
-        .from("calendar_appointments")
-        .select("contact_id, status, starts_at")
-        .eq("organization_id", org)
-        .gte("created_at", desde)
-        .order("created_at", { ascending: true })
-        .range(de, ate),
-    ),
-    horariosDosAgentes(),
-  ]);
+  let conversas: Leitura<LinhaDeConversa> = leituraVazia();
+  let mensagens: Leitura<LinhaDeMensagem> = leituraVazia();
+  let casos: Leitura<LinhaDeCaso> = leituraVazia();
+  let vinculos: Leitura<LinhaDeVinculo> = leituraVazia();
+  let consultas: Leitura<LinhaDeConsulta> = leituraVazia();
+  let horario: LeituraDoHorario = { ...escolheHorario([]), estado: "ok" };
 
-  const horario = escolheHorario(versoes);
-  const funil = calculaFunil({
-    periodo,
-    janela: horario.janela,
-    mensagens: mensagens.linhas,
-    casos: casos.linhas,
-    consultas: consultas.linhas,
-    truncado: { mensagens: mensagens.truncado, casos: casos.truncado, consultas: consultas.truncado },
-    agora,
-  });
+  if (fusoLido) {
+    // Ordem total (created_at, id): paginar por `range` sobre ordem com empate repete ou pula linha.
+    [conversas, casos, horario] = await Promise.all([
+      lerEmPaginas<LinhaDeConversa>((de, ate) =>
+        supabase
+          .from("conversations")
+          .select("id, created_at, is_group", { count: "exact" })
+          .eq("organization_id", org)
+          .eq("is_group", false)
+          .gte("created_at", desde)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(de, ate),
+      ),
+      lerEmPaginas<LinhaDeCaso>((de, ate) =>
+        supabase
+          .from("crm_leads")
+          .select("id, status, custom_fields, created_at", { count: "exact" })
+          .eq("organization_id", org)
+          // o caso entra pela data em que a triagem o registrou, não pela de criação
+          .gte("custom_fields->>triagem_em", desde)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(de, ate),
+      ),
+      horariosDosAgentes(),
+    ]);
+
+    // As mensagens são lidas só das conversas novas (a primeira fala de TODA a história delas).
+    if (conversas.estado === "ok") {
+      mensagens = await lerPorLotes<LinhaDeMensagem>(
+        conversas.linhas.map((c) => c.id),
+        IDS_POR_LOTE,
+        (lote) =>
+          lerEmPaginas<LinhaDeMensagem>((de, ate) =>
+            supabase
+              .from("messages")
+              .select("id, conversation_id, created_at, direction, type", { count: "exact" })
+              .eq("organization_id", org)
+              .eq("direction", "inbound")
+              .in("conversation_id", lote)
+              .order("created_at", { ascending: true })
+              .order("id", { ascending: true })
+              .range(de, ate),
+          ),
+      );
+    }
+
+    // Consultas: só as VINCULADAS aos casos que seguem no funil (triados não recusados).
+    if (casos.estado === "ok") {
+      const elegiveis = elegiveisDoFunil(casos.linhas, periodo);
+      vinculos = await lerPorLotes<LinhaDeVinculo>(
+        elegiveis.map((c) => c.id),
+        IDS_POR_LOTE,
+        (lote) =>
+          lerEmPaginas<LinhaDeVinculo>((de, ate) =>
+            supabase
+              .from("crm_lead_links")
+              .select("id, lead_id, target_id", { count: "exact" })
+              .eq("organization_id", org)
+              .eq("target_kind", "appointment")
+              .in("lead_id", lote)
+              .order("created_at", { ascending: true })
+              .order("id", { ascending: true })
+              .range(de, ate),
+          ),
+      );
+      if (vinculos.estado === "ok") {
+        consultas = await lerPorLotes<LinhaDeConsulta>(
+          vinculos.linhas.map((v) => v.target_id),
+          IDS_POR_LOTE,
+          (lote) =>
+            lerEmPaginas<LinhaDeConsulta>((de, ate) =>
+              supabase
+                .from("calendar_appointments")
+                .select("id, status, starts_at", { count: "exact" })
+                .eq("organization_id", org)
+                .in("id", lote)
+                .order("starts_at", { ascending: true })
+                .order("id", { ascending: true })
+                .range(de, ate),
+            ),
+        );
+      }
+    }
+  }
+
+  const funil = calculaFunil({ periodo, fusoLido, horario, conversas, mensagens, casos, vinculos, consultas, agora });
 
   const dia = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString(tag, { timeZone: "UTC", dateStyle: "short" });
   const diaDaSemana = (n: number) => new Date(Date.UTC(2023, 0, 1 + n)).toLocaleDateString(tag, { timeZone: "UTC", weekday: "short" });
   const rotuloDosDias: Record<number, string> = { 7: t("7 dias"), 30: t("30 dias"), 90: t("90 dias") };
 
   const NOME: Record<EtapaId, string> = {
-    fora_do_horario: t("Atendimentos fora do horário"),
+    fora_do_horario: t("Primeiros contatos fora do horário"),
     triados: t("Triados"),
     agendados: t("Agendados"),
     compareceram: t("Compareceram"),
     clientes: t("Viraram cliente"),
   };
   const DEFINICAO: Record<EtapaId, string> = {
-    fora_do_horario: t("Conversas cuja primeira mensagem do cliente no período chegou fora do horário comercial do escritório."),
-    triados: t("Casos abertos no período com a área do direito preenchida pela triagem."),
-    agendados: t("Desses casos, os que têm consulta marcada na agenda e não cancelada."),
-    compareceram: t("Desses casos, os que têm consulta registrada como realizada."),
-    clientes: t("Desses casos, os que foram ganhos no funil."),
+    fora_do_horario: t(
+      "Conversas novas no período (a primeira mensagem do cliente, em toda a história, caiu no período), fora de grupos, que chegaram fora do horário comercial do escritório.",
+    ),
+    triados: t("Casos que a triagem registrou no período, com a área do direito preenchida. Conta só casos que a triagem registrou."),
+    agendados: t("Dos triados não recusados, os que têm consulta vinculada ao caso na agenda e não cancelada."),
+    compareceram: t("Dos agendados com consulta já passada, os que têm consulta registrada como realizada. Consultas que ainda vão acontecer ficam fora."),
+    clientes: t("Dos que compareceram, os que foram ganhos no funil."),
   };
-  const motivo = (m: MotivoNaoMedido): string => {
-    if (m === "sem_horario_configurado") return t("Não medido: nenhum agente publicado tem horário de funcionamento configurado.");
-    if (m === "sem_registro_de_comparecimento") return t("Não medido: há consultas que já passaram, mas ninguém registrou se o cliente compareceu.");
-    return t("Não medido: as consultas marcadas ainda não aconteceram.");
+  const UNIDADE: Partial<Record<EtapaId, string>> = {
+    fora_do_horario: t("primeiros contatos no período"),
+    agendados: t("triados não recusados"),
+    compareceram: t("casos agendados com consulta já passada"),
+    clientes: t("casos que compareceram"),
+  };
+  const FONTE: Record<Fonte, string> = {
+    conversas: t("as conversas"),
+    mensagens: t("as mensagens"),
+    casos: t("os casos"),
+    vinculos: t("os vínculos entre consultas e casos"),
+    consultas: t("as consultas"),
+    horario: t("o horário do agente"),
+    fuso: t("o fuso da organização"),
+  };
+  const motivo = (m: Extract<Medida, { medido: false }>): string => {
+    switch (m.motivo) {
+      case "sem_horario_configurado":
+        return t("Não medido: nenhum agente publicado tem horário de funcionamento configurado.");
+      case "horario_atravessa_meia_noite":
+        return t("Não medido: horário que atravessa a meia-noite não é suportado. Configure o horário do agente dentro do mesmo dia.");
+      case "erro_ao_ler":
+        return t("Não medido: erro ao ler os dados desta etapa (veja o aviso acima).");
+      case "leitura_parcial":
+        return t("Não medido: leitura parcial, o limite de linhas lidas foi atingido (veja o aviso acima).");
+      case "sem_registro_de_comparecimento":
+        return `${t("Não medido: falta registrar o desfecho de")} ${m.faltam ?? 0} ${t("consultas que já passaram.")}`;
+      case "consultas_ainda_no_futuro":
+        return t("Não medido: as consultas marcadas ainda não aconteceram.");
+      case "etapa_anterior_nao_medida":
+        return t("Não medido: depende da etapa anterior, que não foi medida.");
+    }
   };
   const textoDaPassagem = (p: Passagem): string | null => {
-    if (p.tipo === "primeira") return null;
     if (p.tipo === "outra_unidade") return t("Sem taxa: conversas e casos são unidades diferentes.");
     if (p.tipo === "sem_base") return t("Sem taxa: a etapa anterior não foi medida ou é zero.");
     return null;
   };
-  const aviso = (a: Aviso): string => {
-    if (a === "leitura_parcial_mensagens") return t("Leitura parcial das mensagens: o limite de linhas lidas foi atingido, e os atendimentos podem estar abaixo do real.");
-    if (a === "leitura_parcial_casos") return t("Leitura parcial dos casos: o limite de linhas lidas foi atingido, e os números podem estar abaixo do real.");
-    return t("Leitura parcial das consultas: o limite de linhas lidas foi atingido, e os números podem estar abaixo do real.");
-  };
+  const aviso = (a: Aviso): string =>
+    a.tipo === "erro"
+      ? `${t("Erro ao ler")} ${FONTE[a.fonte]}. ${t("As etapas que dependem disso aparecem como não medidas.")}`
+      : `${t("Leitura parcial:")} ${FONTE[a.fonte]}. ${t("O limite de linhas lidas foi atingido; as etapas que dependem disso aparecem como não medidas.")}`;
+
+  const d = funil.desdobramento;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:px-6">
@@ -171,14 +255,14 @@ export default async function PainelDeMedicao({ searchParams }: { searchParams: 
         </p>
         <nav className="flex flex-wrap items-center gap-2 text-sm" aria-label={t("Período")}>
           <span className="text-muted-foreground">{t("Período")}:</span>
-          {DIAS_DO_PAINEL.map((d) => (
+          {DIAS_DO_PAINEL.map((n) => (
             <Link
-              key={d}
-              href={`/app/painel?dias=${d}`}
-              aria-current={d === dias ? "page" : undefined}
-              className={d === dias ? "rounded-md border bg-accent px-2 py-1 font-medium" : "rounded-md border px-2 py-1 underline-offset-2 hover:underline"}
+              key={n}
+              href={`/app/painel?dias=${n}`}
+              aria-current={n === dias ? "page" : undefined}
+              className={n === dias ? "rounded-md border bg-accent px-2 py-1 font-medium" : "rounded-md border px-2 py-1 underline-offset-2 hover:underline"}
             >
-              {rotuloDosDias[d]}
+              {rotuloDosDias[n]}
             </Link>
           ))}
         </nav>
@@ -188,15 +272,20 @@ export default async function PainelDeMedicao({ searchParams }: { searchParams: 
       </header>
 
       {funil.avisos.map((a) => (
-        <p key={a} role="alert" className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm">
+        <p key={`${a.fonte}-${a.tipo}`} role="alert" className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm">
           {aviso(a)}
         </p>
       ))}
+      {funil.fusosDiferem && horario.janela ? (
+        <p role="status" data-testid="aviso-fusos" className="rounded-md border px-3 py-2 text-sm">
+          {t("O fuso do escritório")} ({funil.periodo.fuso}) {t("é diferente do fuso do horário do agente")} ({horario.janela.timezone}).{" "}
+          {t("O período usa o do escritório; o “fora do horário” usa o do agente.")}
+        </p>
+      ) : null}
 
       <ol className="divide-y rounded-md border bg-card">
         {funil.etapas.map((etapa, i) => {
-          const foraDoHorario = etapa.id === "fora_do_horario";
-          const denominador = foraDoHorario ? funil.totalDeAtendimentos : funil.casosAbertos;
+          const unidade = UNIDADE[etapa.id];
           const semPassagem = textoDaPassagem(etapa.passagem);
           return (
             <li key={etapa.id} className="space-y-1 px-4 py-4" data-testid={`etapa-${etapa.id}`}>
@@ -216,27 +305,37 @@ export default async function PainelDeMedicao({ searchParams }: { searchParams: 
               </div>
               {etapa.medida.medido ? (
                 <p className="text-sm text-muted-foreground">
-                  {etapa.medida.valor} {t("de")} {denominador} {foraDoHorario ? t("atendimentos no período") : t("casos abertos no período")}
+                  {etapa.id === "triados"
+                    ? `${etapa.medida.valor} ${t("casos triados no período")}`
+                    : `${etapa.medida.valor} ${t("de")} ${etapa.de ?? 0} ${unidade ?? ""}`}
                   {etapa.passagem.tipo === "taxa" ? ` · ${etapa.passagem.percentual}% ${t("da etapa anterior")}` : ""}
                 </p>
               ) : (
-                <p className="text-sm text-muted-foreground">{motivo(etapa.medida.motivo)}</p>
+                <p className="text-sm text-muted-foreground">{motivo(etapa.medida)}</p>
               )}
               {semPassagem ? <p className="text-xs text-muted-foreground">{semPassagem}</p> : null}
-              {etapa.passagem.tipo === "taxa" && etapa.passagem.acimaDaAnterior ? (
-                <p className="text-xs text-muted-foreground">{t("Acima da etapa anterior: nem todo caso passou por ela, e o painel mostra o número como é.")}</p>
-              ) : null}
-              {etapa.id === "triados" && etapa.medida.medido && etapa.medida.valor === 0 && funil.casosAbertos > 0 ? (
-                <p className="text-xs text-muted-foreground">{t("A triagem ainda não grava a área do direito nos casos.")}</p>
-              ) : null}
-              {etapa.id === "compareceram" && etapa.medida.medido && funil.agendadosSemDesfecho > 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  {funil.agendadosSemDesfecho} {t("casos agendados com consulta já passada e sem desfecho registrado.")}
+              {etapa.id === "triados" && d ? (
+                <p className="text-xs text-muted-foreground" data-testid="desdobramento-da-triagem">
+                  {t("Seguiram")}: {d.seguiu} · {t("Recusados")}: {d.recusou} · {t("Passaram ao advogado")}: {d.passouAoAdvogado}
+                  {d.semDecisao > 0 ? ` · ${t("Sem decisão registrada")}: ${d.semDecisao}` : ""}
                 </p>
               ) : null}
-              {foraDoHorario && horario.janela ? (
+              {etapa.id === "compareceram" && funil.aindaPorAcontecer !== null && funil.aindaPorAcontecer > 0 ? (
+                <p className="text-xs text-muted-foreground" data-testid="ainda-por-acontecer">
+                  {funil.aindaPorAcontecer} {t("casos agendados com consulta ainda por acontecer (fora desta conta).")}
+                </p>
+              ) : null}
+              {etapa.id === "clientes" && funil.ganhos && funil.ganhos.total > 0 ? (
+                <p className="text-xs text-muted-foreground" data-testid="ganhos-sem-consulta">
+                  {funil.ganhos.semConsultaRealizada !== null
+                    ? `${t("Ganhos sem consulta realizada")}: ${funil.ganhos.semConsultaRealizada} ${t("de")} ${funil.ganhos.total} ${t("ganhos entre os triados não recusados.")}`
+                    : `${funil.ganhos.total} ${t("ganhos entre os triados não recusados; sem 'Compareceram' medido, não dá para separar quem teve consulta realizada.")}`}
+                </p>
+              ) : null}
+              {etapa.id === "fora_do_horario" && horario.janela ? (
                 <p className="text-xs text-muted-foreground" data-testid="horario-usado">
-                  {t("Horário usado")}: {horario.agente} · {[...horario.janela.weekdays].sort((a, b) => a - b).map(diaDaSemana).join(", ")} · {horario.janela.start}–{horario.janela.end} ({horario.janela.timezone})
+                  {t("Horário usado")}: {horario.agente} · {[...horario.janela.weekdays].sort((a, b) => a - b).map(diaDaSemana).join(", ")} · {horario.janela.start}–{horario.janela.end} ({horario.janela.timezone}) ·{" "}
+                  {t("é o horário publicado hoje e vale para o período inteiro")}
                   {horario.divergentes ? ` · ${t("Há agentes com horários diferentes; vale o do mais antigo.")}` : ""}
                 </p>
               ) : null}
@@ -247,7 +346,9 @@ export default async function PainelDeMedicao({ searchParams }: { searchParams: 
       </ol>
 
       <p className="text-xs text-muted-foreground">
-        {t("Triados, agendados, compareceram e clientes contam os casos abertos no período e podem não ser subconjuntos uns dos outros; nada é estimado onde o dado não existe.")}
+        {t(
+          "Cada etapa parte da anterior e cada caso conta uma vez; casos recusados pela triagem não entram nas etapas seguintes. As consultas entram pelo vínculo com o caso na agenda e de qualquer categoria (consulta, reunião, call…): o painel não filtra por categoria. Nada é estimado onde o dado não existe.",
+        )}
       </p>
     </div>
   );
