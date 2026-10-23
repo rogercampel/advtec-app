@@ -72,7 +72,7 @@ export interface ConferenciaDeSaida {
    * a tela deixa de encontrar o estado e mostra "carregando…" para sempre —
    * aconteceu ao escrever isto, e o teste de componente pegou.
    */
-  camada: "promessa_semantica" | "jailbreak" | "afirmacao_clinica" | null;
+  camada: "promessa_semantica" | "jailbreak" | "afirmacao_clinica" | "travas_oab" | null;
 }
 
 /**
@@ -212,6 +212,20 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     escolha: null,
     porQueNaoSeDesliga: "Esconder que é um assistente é enganar o cliente.",
      camada: null,
+  },
+  {
+    nome: "travas_oab",
+    rotulo: "Respeitar as vedações da OAB",
+    oQueProtege:
+      "Barra a resposta que opina sobre o caso, promete resultado, cita valor ou prazo de ganho, " +
+      "faz propaganda ou deixa de dizer que é um atendimento automatizado. Nesses casos o " +
+      "assistente não responde por conta própria: a conversa é entregue ao advogado.",
+    escolha: {
+      custo: "Não custa nada. Vem ligada: o escritório não deve atender clientes sem ela.",
+      consultaModelo: false,
+    },
+    porQueNaoSeDesliga: "",
+    camada: "travas_oab",
   },
 ];
 

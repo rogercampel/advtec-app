@@ -35,21 +35,32 @@ describe("padrão das camadas fora do worker", () => {
       promessa_semantica: null,
       jailbreak: false,
       afirmacao_clinica: null,
+      travas_oab: null,
     });
     expect(
-      camadasEfetivas(linhas, { promessa_semantica: true, jailbreak: true, afirmacao_clinica: false }),
+      camadasEfetivas(linhas, { promessa_semantica: true, jailbreak: true, afirmacao_clinica: false, travas_oab: true }),
     ).toEqual({
       promessa_semantica: true,
       jailbreak: false,
       afirmacao_clinica: false,
+      travas_oab: true,
     });
     expect(
-      camadasEfetivas([], { promessa_semantica: false, jailbreak: true, afirmacao_clinica: false }),
+      camadasEfetivas([], { promessa_semantica: false, jailbreak: true, afirmacao_clinica: false, travas_oab: true }),
     ).toEqual({
       promessa_semantica: false,
       jailbreak: true,
       afirmacao_clinica: false,
+      travas_oab: true,
     });
+  });
+
+  it("as travas da OAB nascem LIGADAS: sem linha vale ligada, e a organização pode desligar", () => {
+    // Inverso da clínica: a spec do escritório proíbe conversa real sem as travas.
+    expect(padraoDasCamadasNoAmbiente({}).travas_oab).toBe(true);
+    expect(camadasEfetivas([]).travas_oab).toBe(true);
+    expect(camadasEfetivas([{ layer: "travas_oab", enabled: false }]).travas_oab).toBe(false);
+    expect(escolhaDasLinhas([]).travas_oab).toBeNull();
   });
 
   it("a afirmação clínica nasce desligada e sem variável de ambiente: só a organização liga", () => {

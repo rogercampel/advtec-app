@@ -1,0 +1,7 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: As travas da OAB passam a valer no turno do agente que responde o cliente
+---
+
+AdvTec (fork), spec 0001, E2/E3. `lib/oab/travas.ts` já existia, mas só a resposta de andamento do DJEN o chamava: o agente que fala com o cliente não passava por ele. Agora o gate `travas_oab` (`lib/oab/gate-das-travas.ts`, último da cadeia `before_send`, depois do `disclosure`) confere o `send_message` do modelo. Promessa de resultado, valor ou prazo de ganho, opinião jurídica, linguagem de propaganda, pedido de atendimento humano e pergunta de mérito sem deferir ao advogado: o modelo não tenta de novo, o cliente recebe um aviso curto, e a conversa é entregue ao advogado (`contacts.force_human`, passagem registrada com o motivo `trava_da_oab`). A 1ª resposta sem se identificar como atendimento automatizado é só vetada, e o modelo reescreve. Um template de apresentação da organização contido no corpo conta como identificação. A regra de identificação passa a aceitar "Sou o/a assistente virtual…". Turno de resposta a mídia sem texto confere só as proibições. A camada `travas_oab` aparece em Segurança, nasce LIGADA (sem linha vale ligada) e a organização pode desligá-la; o Testar do agente, o follow-up e o `send_template` ainda não a armam. Migration 9010: alarga os CHECKs de `passagens_de_atendimento` (motivo `trava_da_oab`, origem `trava_de_saida`). `BEFORE_SEND_CHAIN_VERSION` vai a 10. Sem variável de ambiente nova.

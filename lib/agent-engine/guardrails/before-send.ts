@@ -79,6 +79,8 @@ import type { ChannelProvider } from '@/lib/channels/capabilities';
 import { aplicarAjustesDeEstilo, lerAjustesDeEstiloDaOrg } from './ajustes-de-estilo-da-org';
 import type { AjusteDeEstilo, LeituraDosAjustes } from './ajustes-de-estilo-da-org';
 import { renderVetoDeAfirmacao, type ConferenciaDeFato } from './factual-claim';
+// AdvTec: as travas da OAB na saída. A lógica mora em arquivo próprio (menor diff no herdado).
+import { travasOabGate } from '@/lib/oab/gate-das-travas';
 
 /** O que os gates enxergam — carregado UMA vez sob o lock, por tentativa de envio. */
 export interface GateContext {
@@ -242,6 +244,14 @@ export interface GateContext {
    *    quando a organização ligou a camada.
    */
   clinicalClaimEnforced?: boolean;
+  /**
+   * AdvTec — arma o `travasOabGate` (`lib/oab/gate-das-travas.ts`). Ausente = NO-OP, pelas
+   * mesmas razões do `clinicalClaimEnforced`: só o `send_message` do agente escreve corpo
+   * de modelo. `mensagemDoCliente` é o que o cliente disse neste turno (a pergunta que a
+   * resposta precisa defender); `null` = turno sem mensagem nova (follow-up), e aí o gate
+   * só confere as proibições da resposta.
+   */
+  travasOab?: { mensagemDoCliente: string | null };
   /**
    * Arma o `spinningGate`. **Ausente = ARMADO** — a direção segura aqui é a
    * oposta do `internalVocabularyEnforced` logo acima, e a assimetria é
@@ -919,8 +929,11 @@ const spinningGate: Gate = {
  * assistente. Nasce DESARMADO (ver `GateContext.clinicalClaimEnforced`): só arma no turno
  * do agente de uma organização que ligou a camada `afirmacao_clinica`, então a v8 não
  * muda o destino de nenhum envio de quem não ligou.
+ * v10 (AdvTec) = acrescenta `travasOabGate` DEPOIS do `disclosure` — as travas da OAB
+ * (`lib/oab/travas.ts`) sobre o corpo que vai sair, já com a apresentação emendada. Nasce
+ * DESARMADO (ver `GateContext.travasOab`): só o `send_message` do agente o arma.
  */
-export const BEFORE_SEND_CHAIN_VERSION = 9;
+export const BEFORE_SEND_CHAIN_VERSION = 10;
 
 /**
  * Gate 6.3 — CONFERÊNCIA DE FATO (#2231): a afirmação de FATO da resposta
@@ -972,7 +985,8 @@ export const factualClaimGate: Gate = {
  *         câncer escritos pelo modelo; só arma com a camada `afirmacao_clinica` ligada;
  *   (6.9) agenda_stall — "vou verificar/confirmar horário" sem ter chamado a ferramenta de
  *         agenda neste turno; antes do disclosure pelo mesmo motivo do internal_vocabulary;
- *   (8) disclosure — 1ª mensagem se apresenta como assistente virtual (F4-05).
+ *   (8) disclosure — 1ª mensagem se apresenta como assistente virtual (F4-05);
+ *   (9) travas_oab — AdvTec: vedações da OAB sobre o corpo final (depois do disclosure).
  * (O anti-jailbreak F4-04 é INBOUND advisório, não gate de before_send — não entra aqui.)
  */
 export const BEFORE_SEND_GATES: readonly Gate[] = [
@@ -989,6 +1003,9 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   clinicalClaimGate,
   agendaStallGate,
   disclosureGate,
+  // AdvTec (10): depois do disclosure, que emenda o corpo da 1ª mensagem — as travas
+  // julgam o texto que vai sair, com a apresentação já costurada.
+  travasOabGate,
 ];
 
 /** Uma linha do trace de auditoria — um registro por gate avaliado na tentativa. */
@@ -1112,6 +1129,11 @@ export interface RunBeforeSendArgs {
    * (`camadaLigada(camadas.afirmacao_clinica, false)`).
    */
   enforceClinicalClaim?: boolean;
+  /**
+   * AdvTec — arma o `travasOabGate`; ver `GateContext.travasOab`. O turno do agente passa
+   * quando a camada `travas_oab` está ligada (`camadaLigada(camadas.travas_oab, true)`).
+   */
+  travasOab?: GateContext['travasOab'];
   /**
    * Desarma o `spinningGate` para ESTA tentativa. Ausente = armado (ver
    * `GateContext.spinningEnforced` para a razão da assimetria e para a conta que
@@ -1445,6 +1467,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
         : {}),
       internalVocabularyEnforced: args.enforceInternalVocabulary ?? false,
       clinicalClaimEnforced: args.enforceClinicalClaim ?? false,
+      ...(args.travasOab !== undefined ? { travasOab: args.travasOab } : {}),
       ...(args.agenda !== undefined ? { agenda: args.agenda } : {}),
       ...(args.followup !== undefined ? { followup: args.followup } : {}),
     };

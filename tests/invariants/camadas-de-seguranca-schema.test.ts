@@ -148,6 +148,7 @@ describe("schema das camadas de segurança por organização", () => {
       promessa_semantica: null,
       jailbreak: null,
       afirmacao_clinica: null,
+      travas_oab: null,
     });
   });
 
@@ -161,6 +162,7 @@ describe("schema das camadas de segurança por organização", () => {
       promessa_semantica: false,
       jailbreak: true,
       afirmacao_clinica: null,
+      travas_oab: null,
     });
   });
 
@@ -173,6 +175,7 @@ describe("schema das camadas de segurança por organização", () => {
       promessa_semantica: null,
       jailbreak: null,
       afirmacao_clinica: null,
+      travas_oab: null,
     });
   });
 
@@ -187,6 +190,7 @@ describe("schema das camadas de segurança por organização", () => {
       promessa_semantica: null,
       jailbreak: null,
       afirmacao_clinica: null,
+      travas_oab: null,
     });
   });
 });
