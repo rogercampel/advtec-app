@@ -36,6 +36,8 @@
  * função pura `nomesCombinam`. Toda consulta filtra `organization_id`, vindo da
  * linha do job — nunca do modelo.
  */
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+
 import type { Consultavel } from "./banco";
 import { soAlfanumerico } from "./texto";
 
@@ -134,7 +136,7 @@ export async function checaConflito(
     const comoPerfil = r.display_name ? nomesCombinam(args.nomeDaParteContraria, r.display_name) : null;
     const como = comoNome === "igual" || comoPerfil === "igual" ? "igual" : (comoNome ?? comoPerfil);
     if (!como) continue;
-    contatos.push({ contactId: r.id, nome: r.name?.trim() || r.display_name?.trim() || "(sem nome)", casos: r.casos, como });
+    contatos.push({ contactId: r.id, nome: nomeDoContato(r) ?? "(sem nome)", casos: r.casos, como });
   }
   return contatos.length > 0 ? { resultado: "possivel_conflito", contatos } : { resultado: "sem_conflito", verificado: true };
 }
