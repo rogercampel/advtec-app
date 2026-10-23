@@ -297,6 +297,16 @@ describe("urgência descrita pelo cliente -> advogado avisado antes do modelo", 
     expect(rows[0]!.body).toMatch(/audiência é amanhã/i);
   });
 
+  it("a urgência fica gravada no caso, para a ficha mostrar (e a passagem não depende disso)", async () => {
+    await rodaTurno(AUDIENCIA, []);
+
+    const { rows } = await pool.query<{ custom_fields: Record<string, unknown> }>(
+      "select custom_fields from crm_leads where organization_id = $1 and contact_id = $2",
+      [ORG, CONTACT],
+    );
+    expect(String(rows[0]!.custom_fields.urgencia_juridica)).toMatch(/audiência é amanhã/);
+  });
+
   it("o item da Central é CRÍTICO e diz que é urgência jurídica", async () => {
     await rodaTurno(AUDIENCIA, []);
 

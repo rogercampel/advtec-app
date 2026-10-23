@@ -247,6 +247,7 @@ import type { MotivoDoAviso as MotivoDoAvisoAoCliente } from '@/lib/escalacao/av
 import type { MotivoDaPassagem, OrigemDaPassagem } from '@/lib/escalacao/passagem'; // AdvTec: vocabulário da passagem
 import { DEFS_DA_TRIAGEM, ferramentasDaTriagem } from '@/lib/triagem/ferramenta'; // AdvTec (fork), triagem jurídica 0001.E3
 import { detectaUrgenciasJuridicas } from '@/lib/triagem/urgencia-juridica';
+import { registraUrgenciaNoCaso } from '@/lib/triagem/registrar-triagem';
 import { TRIAGEM_SYSTEM_BLOCK, desvioDaTriagem, entregaPorUrgenciaDoCliente } from '@/lib/triagem/desvio-no-turno';
 import {
   nivelFinalDaManipulacao,
@@ -2738,10 +2739,24 @@ async function executarTurnoDoAgente(
   if (triagemLigada) {
     const urgencias = inboundsPendentes.flatMap((texto) => detectaUrgenciasJuridicas(texto));
     if (urgencias.length > 0) {
-      // TODO(#18): gravar a urgência no caso ANTES da passagem, para a ficha mostrá-la:
-      //   await registraUrgenciaNoCaso(pool, { organizationId: tenantId, contactId: leadId, conversationId: input.conversationId }, urgencias);
-      // A função nasce no #18 (lib/triagem/); ligar aqui depois do merge. Até lá a ficha lê o léxico
-      // direto do histórico (`urgenciasNoHistorico`) e nunca afirma "sem urgência".
+      // Grava a urgência no caso ANTES da passagem, para a ficha mostrá-la (o modelo não roda aqui, então
+      // `registrar_triagem` não chega a ser chamada). Gravação que falha NUNCA impede a passagem: a
+      // urgência já foi detectada, e o aviso ao advogado é o que importa. A ficha ainda lê o léxico do
+      // histórico (`urgenciasNoHistorico`) e nunca afirma "sem urgência".
+      try {
+        const gravada = await registraUrgenciaNoCaso(
+          pool,
+          { organizationId: tenantId, contactId: leadId, conversationId: input.conversationId },
+          urgencias,
+        );
+        if (!gravada.gravado) {
+          runLog.warn('urgência jurídica não gravada no caso — a passagem segue', { motivo: gravada.motivo ?? 'nada_a_gravar' });
+        }
+      } catch (err) {
+        runLog.warn('urgência jurídica: a gravação no caso lançou — a passagem segue', {
+          error: err instanceof Error ? err.message.slice(0, 160) : 'erro desconhecido',
+        });
+      }
       await entregarAoAdvogadoNoTurno(entregaPorUrgenciaDoCliente(urgencias));
       return; // bot silencia: o aviso já saiu, e nada mais sai neste turno
     }

@@ -39,7 +39,7 @@ import { detectaUrgenciasJuridicas } from "@/lib/triagem/urgencia-juridica";
  *  11. `saiu()` aceitando qualquer ok (rascunho contaria como enviado); 12. recusa com severidade crítica;
  *  13. turno sem repassar a severidade à Central; 14. turno ignorando `semAviso`; 15. aviso de urgência com
  *      "agora mesmo"; 16. ficha ignorando a urgência do histórico; 17. trava_oab na recusa gerando 2ª passagem;
- *  18. ponto de chamada de `registraUrgenciaNoCaso` removido.
+ *  18. `registraUrgenciaNoCaso` sem try/catch antes da passagem (falha da gravação derrubaria o desvio).
  */
 
 const URGENCIA = detectaUrgenciasJuridicas("Minha audiência é amanhã de manhã");
@@ -59,7 +59,7 @@ const passar = (motivo: "urgencia" | "conflito" | "area_a_decidir"): DecisaoDeTr
   motivo,
   area: "Trabalhista",
   urgencias: motivo === "urgencia" ? URGENCIA : [],
-  conflito: motivo === "conflito" ? [{ contactId: "x", nome: "Fulano de Tal Silva", casos: 2, como: "igual" }] : [],
+  conflito: motivo === "conflito" ? [{ contactId: "x", casos: 2, casoIds: ["c1", "c2"], como: "igual" }] : [],
   instrucao: "x",
   registro: REGISTRO,
 });
@@ -352,12 +352,14 @@ describe("fiação da triagem no turno", () => {
     expect(corpo.indexOf("avisarLeadDaEscalacao(")).toBeLessThan(corpo.indexOf("performHumanHandoff("));
   });
 
-  it("o ponto de chamada de registraUrgenciaNoCaso está marcado, antes da passagem por urgência", () => {
-    const todo = FONTE.indexOf("TODO(#18)");
+  it("a urgência é gravada no caso ANTES da passagem, e gravação que falha não a impede", () => {
+    const gravar = FONTE.indexOf("await registraUrgenciaNoCaso(");
     const passagem = FONTE.indexOf("entregarAoAdvogadoNoTurno(entregaPorUrgenciaDoCliente");
-    expect(todo).toBeGreaterThan(-1);
-    expect(todo).toBeLessThan(passagem);
-    expect(FONTE.slice(todo, passagem)).toMatch(/registraUrgenciaNoCaso/);
+    expect(gravar).toBeGreaterThan(-1);
+    expect(gravar).toBeLessThan(passagem);
+    const trecho = FONTE.slice(FONTE.lastIndexOf("try {", gravar), passagem);
+    expect(trecho, "a gravação precisa de try/catch: ela não pode derrubar a passagem").toMatch(/catch \(err\)/);
+    expect(trecho).toMatch(/a passagem segue/);
   });
 
   it("registrar_triagem ESCREVE: não está em READ_ONLY_TOOLS; está nas definições e só entra com a camada", () => {
