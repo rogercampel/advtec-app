@@ -51,7 +51,12 @@ import {
 import type { Consultavel, QuemEstaNoTurno } from "./banco";
 import { checaConflito, type ContatoEmConflito } from "./conflito";
 import { configDaTriagem } from "./config";
-import { detectaUrgenciasJuridicas, ROTULO_DA_URGENCIA, type UrgenciaJuridica } from "./urgencia-juridica";
+import {
+  detectaUrgenciasJuridicas,
+  ROTULO_DA_URGENCIA,
+  tipoDeUrgenciaDoTexto,
+  type UrgenciaJuridica,
+} from "./urgencia-juridica";
 
 /** As chaves de `crm_leads.custom_fields`. Contrato: renomear esconde o que já foi gravado. */
 export const CAMPOS_DA_TRIAGEM = {
@@ -60,7 +65,10 @@ export const CAMPOS_DA_TRIAGEM = {
   resumo: "resumo_do_caso",
   parteContraria: "parte_contraria",
   urgencia: "urgencia_juridica",
-  conflito: "conflito_de_interesses",
+  /** Conflito: só `true` e IDS. O nome do outro cliente NUNCA entra em `custom_fields` (o modelo e as integrações leem). */
+  conflitoPossivel: "conflito_possivel",
+  conflitoContatos: "conflito_contatos",
+  conflitoCasos: "conflito_casos",
   decisao: "triagem_decisao",
   motivo: "triagem_motivo",
   em: "triagem_em",
@@ -73,7 +81,7 @@ export const registrarTriagemSchema = z.object({
   area_do_direito: z.string().trim().min(1).max(120),
   resumo_do_caso: z.string().trim().max(4000).optional(),
   parte_contraria: z.string().trim().max(200).optional(),
-  /** Marca do modelo. Só ACRESCENTA urgência; texto como "nenhuma" não conta. */
+  /** Marca do modelo. Só ACRESCENTA urgência, e só `true` ou um tipo do léxico ("prazo", "preso"…) conta; qualquer outro texto não. */
   urgencia: z.union([z.boolean(), z.string().trim().max(300)]).optional(),
 });
 export type EntradaDaTriagem = z.infer<typeof registrarTriagemSchema>;
@@ -102,7 +110,8 @@ export type DecisaoDeTriagem =
       motivo: MotivoDaPassagem;
       area: string;
       urgencias: UrgenciaJuridica[];
-      conflito: ContatoEmConflito[];
+      /** Só ids e contagens — o nome do outro cliente não sai desta função. */
+      conflito: Array<Omit<ContatoEmConflito, "nome">>;
       instrucao: string;
       registro: Registro;
     };
@@ -128,15 +137,12 @@ export async function mensagensDoCliente(db: Consultavel, quem: QuemEstaNoTurno)
   return rows.map((r) => r.body).reverse();
 }
 
-const NEGATIVAS = new Set(["nao", "nenhuma", "nenhum", "sem urgencia", "false", "n/a", "-", "no"]);
-
+/** A marca do modelo conta se for `true` ou NOMEAR um tipo do léxico. "Não há urgência" e "sem urgência aparente" não contam. */
 function urgenciaDoModelo(v: EntradaDaTriagem["urgencia"]): string | null {
   if (v === undefined || v === false) return null;
   if (v === true) return "marcada pelo agente";
-  const t = v.trim();
-  if (t === "") return null;
-  const n = t.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().replace(/[.!\s]+$/g, "");
-  return NEGATIVAS.has(n) ? null : t.slice(0, 200);
+  const tipo = tipoDeUrgenciaDoTexto(v);
+  return tipo === null ? null : ROTULO_DA_URGENCIA[tipo];
 }
 
 type CasoAberto = { id: string; customFields: Record<string, unknown> };
@@ -244,11 +250,6 @@ async function anotaNaLinhaDoTempo(
 
 // ── o executor ──
 
-function textoDoConflito(contatos: ContatoEmConflito[]): string {
-  const nomes = contatos.map((c) => `${c.nome} (${c.como === "igual" ? "nome igual" : "nome parecido"}, ${c.casos} caso${c.casos === 1 ? "" : "s"})`);
-  return `Possível conflito: a parte contrária pode ser cliente do escritório — ${nomes.join("; ")}.`;
-}
-
 export async function executaRegistrarTriagem(
   db: Consultavel,
   quem: QuemEstaNoTurno,
@@ -312,7 +313,11 @@ export async function executaRegistrarTriagem(
       ...(marcaDoModelo !== null ? [`marcada pelo agente: ${marcaDoModelo}`] : []),
     ].join(" | ");
   }
-  if (contatosEmConflito.length > 0) campos[CAMPOS_DA_TRIAGEM.conflito] = textoDoConflito(contatosEmConflito);
+  if (contatosEmConflito.length > 0) {
+    campos[CAMPOS_DA_TRIAGEM.conflitoPossivel] = true;
+    campos[CAMPOS_DA_TRIAGEM.conflitoContatos] = contatosEmConflito.map((c) => c.contactId);
+    campos[CAMPOS_DA_TRIAGEM.conflitoCasos] = contatosEmConflito.flatMap((c) => c.casoIds);
+  }
   campos[CAMPOS_DA_TRIAGEM.decisao] = acao;
   campos[CAMPOS_DA_TRIAGEM.motivo] = motivo ?? (acao === "recusar" ? "area_recusada" : null);
   campos[CAMPOS_DA_TRIAGEM.em] = agora.toISOString();
@@ -368,7 +373,7 @@ export async function executaRegistrarTriagem(
       motivo: motivo!,
       area: rotuloDaArea,
       urgencias,
-      conflito: contatosEmConflito,
+      conflito: contatosEmConflito.map(({ nome: _nome, ...semNome }) => semNome),
       instrucao: instrucoes[motivo!],
       registro,
     };
@@ -393,4 +398,30 @@ export async function executaRegistrarTriagem(
             : ""),
     registro,
   };
+}
+
+/**
+ * Grava no caso aberto do contato a urgência que o turno detectou ANTES do modelo (o modelo não roda, então
+ * `registrar_triagem` não chega a ser chamada). Mescla só `urgencia_juridica` e `triagem_em`, pelo mesmo
+ * merge atômico, e NÃO toca `triagem_decisao`: a decisão da triagem continua sendo a que a ferramenta tomou
+ * (ou nenhuma). Urgência já gravada é mantida, e as novas entram depois dela sem repetir.
+ */
+export async function registraUrgenciaNoCaso(
+  db: Consultavel,
+  quem: QuemEstaNoTurno,
+  urgencias: readonly UrgenciaJuridica[],
+  opcoes: { agora?: () => Date } = {},
+): Promise<Registro> {
+  if (urgencias.length === 0) return { gravado: false, casoId: null };
+  const achado = await casoAbertoDoContato(db, quem);
+  if (achado.caso === null) return { gravado: false, casoId: null, motivo: achado.motivo };
+  const antes = achado.caso.customFields[CAMPOS_DA_TRIAGEM.urgencia];
+  const ja = typeof antes === "string" && antes.trim() !== "" ? antes.split(" | ") : [];
+  const novas = urgencias.map((u) => `${ROTULO_DA_URGENCIA[u.tipo]}: «${u.trecho}»`).filter((t) => !ja.includes(t));
+  const agora = (opcoes.agora ?? (() => new Date()))();
+  const gravou = await gravaNoCaso(db, quem, achado.caso.id, {
+    [CAMPOS_DA_TRIAGEM.urgencia]: [...ja, ...novas].join(" | "),
+    [CAMPOS_DA_TRIAGEM.em]: agora.toISOString(),
+  });
+  return gravou ? { gravado: true, casoId: achado.caso.id } : { gravado: false, casoId: achado.caso.id, motivo: "falha_ao_gravar" };
 }

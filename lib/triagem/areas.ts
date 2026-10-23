@@ -10,7 +10,7 @@
  *   2. `decideArea` — o que o escritório faz com isso? Depende só da config da
  *      organização (`config.ts`): `atende` / `recusa` / `perguntar_ao_advogado`.
  *
- * FALHA FECHADO. Só recusa quando TODAS as áreas candidatas estão na lista de
+ * FALHA FECHADO (com config). Só recusa quando TODAS as áreas candidatas estão na lista de
  * recusadas e nenhuma está na de atendidas. Área que ninguém decidiu, texto que
  * não casou com nada, texto que mistura "demissão" com "delegacia": vai para o
  * advogado. Recusar errado perde um cliente que o escritório queria; perguntar
@@ -294,10 +294,20 @@ export type DecisaoDeArea =
 
 /**
  * `areas` são as candidatas (o que o cliente disse + o que o modelo rotulou).
- * Sem config (listas vazias) nada é recusado: tudo vai para o advogado.
+ *
+ * SEM CONFIG (as duas listas vazias: `settings.triagem` ausente ou vazio) a decisão de ÁREA é `atende`: a
+ * área é registrada no caso, nada é recusado e nada vai ao advogado só por causa da área. Escritório que não
+ * escolheu ainda não pode ver o robô entregar toda conversa na primeira frase (e hoje não há tela para escolher).
+ * Urgência e conflito não dependem disto e valem com ou sem config. COM config, área que ninguém decidiu
+ * continua indo para o advogado.
  */
+export function configVazia(config: ConfigDeAreas): boolean {
+  return config.atendidas.length === 0 && config.recusadas.length === 0;
+}
+
 export function decideArea(areas: readonly AreaId[], config: ConfigDeAreas): DecisaoDeArea {
   const unicas = [...new Set(areas)];
+  if (configVazia(config)) return { acao: "atende", areas: unicas };
   if (unicas.length === 0) return { acao: "perguntar_ao_advogado", areas: [], motivo: "area_nao_identificada" };
 
   // Área nas duas listas: a config se contradiz e ninguém sabe qual vale.
