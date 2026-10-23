@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { logger } from "@/lib/logger";
+
 import {
   PAGINA_DO_CANAL,
   chatIdSemNonoDigito,
@@ -166,10 +168,14 @@ describe("importarHistoricoDaConversa", () => {
     expect(r).toMatchObject({ ok: true, importadas: 2 });
   });
 
-  it("canal fora do ar não grava nada", async () => {
+  it("canal fora do ar não grava nada, e o log guarda o porquê (sem telefone)", async () => {
     const b = bancada();
+    const aviso = vi.spyOn(logger, "warn").mockImplementation(() => {});
     const waha = { listarMensagensDoChat: vi.fn(async () => { throw new Error("waha_chat_messages_500"); }) };
     expect(await importarHistoricoDaConversa(b.admin, waha, "org-a", "conv-1")).toEqual({ ok: false, motivo: "canal_indisponivel" });
     expect(b.inseridas).toEqual([]);
+    expect(aviso).toHaveBeenCalledWith(expect.stringContaining("não respondeu"), { organizationId: "org-a", conversationId: "conv-1", erro: "waha_chat_messages_500" });
+    expect(JSON.stringify(aviso.mock.calls)).not.toMatch(/5586/);
+    aviso.mockRestore();
   });
 });

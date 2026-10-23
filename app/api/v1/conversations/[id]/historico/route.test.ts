@@ -6,14 +6,18 @@ import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createClient } from "@/lib/supabase/server";
 import { importarHistoricoDoCanal } from "@/lib/channels/historico-do-canal";
+import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 
 import { POST } from "./route";
+
+const liberado = { allowed: true, count: 1, limit: 10 } as Awaited<ReturnType<typeof checkRateLimit>>;
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
 vi.mock("@/lib/channels/historico-do-canal", () => ({ importarHistoricoDoCanal: vi.fn() }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 
 /** AdvTec — a rota que traz o histórico do WhatsApp para a conversa. */
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -36,6 +40,34 @@ beforeEach(() => {
   };
   vi.mocked(createClient).mockResolvedValue({ from: () => q } as unknown as Awaited<ReturnType<typeof createClient>>);
   vi.mocked(importarHistoricoDoCanal).mockResolvedValue({ ok: true, importadas: 27, jaEstavam: 2, noCanal: 29 });
+  vi.mocked(checkRateLimit).mockResolvedValue(liberado);
+});
+
+describe("teto de pedidos (auditoria de 22/10/2026, OWASP API4)", () => {
+  it("passou do teto da pessoa: 429 com Retry-After, sem tocar no canal", async () => {
+    vi.mocked(checkRateLimit).mockResolvedValueOnce({ allowed: false, count: 11, limit: 10 } as Awaited<ReturnType<typeof checkRateLimit>>);
+    const res = await POST(req(), ctx());
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("60");
+    expect(importarHistoricoDoCanal).not.toHaveBeenCalled();
+  });
+
+  it("passou do teto da organização: 429, sem tocar no canal", async () => {
+    vi.mocked(checkRateLimit).mockResolvedValueOnce(liberado).mockResolvedValueOnce({ allowed: false, count: 41, limit: 40 } as Awaited<ReturnType<typeof checkRateLimit>>);
+    expect((await POST(req(), ctx())).status).toBe(429);
+    expect(importarHistoricoDoCanal).not.toHaveBeenCalled();
+  });
+
+  it("o teto é por pessoa e por organização", async () => {
+    await POST(req(), ctx());
+    expect(vi.mocked(checkRateLimit).mock.calls.map((c) => c[0])).toEqual(["conversa-historico:u1", `conversa-historico-org:${ORG}`]);
+  });
+
+  it("conversa que a pessoa não vê é 404 antes de gastar o teto", async () => {
+    visivel = false;
+    expect((await POST(req(), ctx())).status).toBe(404);
+    expect(checkRateLimit).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/v1/conversations/[id]/historico", () => {
