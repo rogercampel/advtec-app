@@ -12,9 +12,12 @@ import {
   type LinhaDaPublicacao,
   type PublicacaoDaCaixa,
 } from "@/lib/djen/caixa";
+import { diaNoForo } from "@/lib/djen/coletar";
+import { confereContagem } from "@/lib/djen/conferencia";
 import { corteDoVencido, montaPauta } from "@/lib/djen/pauta";
 import { createClient } from "@/lib/supabase/server";
 
+import { ConferenciaDaContagem } from "./_components/ConferenciaDaContagem";
 import { PautaDeHoje } from "./_components/PautaDeHoje";
 
 import { PublicacoesClient, type NegocioParaLigar, type FunilParaCriar } from "./_components/PublicacoesClient";
@@ -41,7 +44,7 @@ export default async function PublicacoesPage() {
 
   const supabase = await createClient();
   const agora = new Date();
-  const [pubs, confirmadas, negocios, funis] = await Promise.all([
+  const [pubs, confirmadas, conferidas, negocios, funis] = await Promise.all([
     supabase
       .from("djen_publicacoes")
       .select(COLUNAS_DA_PUBLICACAO)
@@ -55,6 +58,14 @@ export default async function PublicacoesPage() {
       .eq("organization_id", org)
       .gte("prazo_vence_em", corteDoVencido(agora))
       .order("prazo_vence_em")
+      .limit(LIMITE),
+    // Conferência da contagem (0006.E5): toda confirmação, inclusive de prazo já vencido.
+    supabase
+      .from("djen_publicacoes")
+      .select(COLUNAS_DA_PUBLICACAO)
+      .eq("organization_id", org)
+      .not("prazo_confirmado_em", "is", null)
+      .order("prazo_confirmado_em", { ascending: false })
       .limit(LIMITE),
     supabase
       .from("crm_leads")
@@ -77,6 +88,10 @@ export default async function PublicacoesPage() {
   ).map(daLinha);
   const caixa = montaCaixa(publicacoes, negocios.data ?? []);
   const pauta = montaPauta(publicacoes, negocios.data ?? [], agora);
+  // Teto de linhas: lidas as mais recentes, a conferência avisa que está parcial e não fala em confiar.
+  const conferencia = confereContagem(((conferidas.data ?? []) as LinhaDaPublicacao[]).map(daLinha), diaNoForo(agora), {
+    cortada: (conferidas.data?.length ?? 0) >= LIMITE,
+  });
 
   const paraLigar: NegocioParaLigar[] = (negocios.data ?? []).map((n) => ({
     id: n.id,
@@ -99,7 +114,7 @@ export default async function PublicacoesPage() {
       naoReconhecidas={caixa.naoReconhecidas}
       totalReconhecidas={caixa.reconhecidas.length}
       descartadas={caixa.descartadas.length}
-      erroDeLeitura={Boolean(pubs.error || confirmadas.error || negocios.error || funis.error)}
+      erroDeLeitura={Boolean(pubs.error || confirmadas.error || conferidas.error || negocios.error || funis.error)}
       negocios={paraLigar}
       funis={paraCriar}
     >
@@ -114,6 +129,7 @@ export default async function PublicacoesPage() {
         pendentes={pauta.pendentes}
         cortada={(pubs.data?.length ?? 0) >= LIMITE}
       />
+      <ConferenciaDaContagem conferencia={conferencia} />
     </PublicacoesClient>
   );
 }

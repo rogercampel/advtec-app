@@ -676,6 +676,23 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
       "O sistema erra a hora de resumir a conversa: resume cedo demais e perde contexto, ou tarde demais e a resposta é recusada.",
     registraEm: "nenhum",
   },
+  {
+    // AdvTec (fork), 0005.E2: a minuta para conferência (`app/api/v1/acervo/minutas/route.ts`).
+    id: "minuta_do_acervo",
+    rotulo: "Escrever a minuta a partir do acervo",
+    oQueFaz:
+      "Escreve um rascunho de peça com os trechos do acervo do escritório mais parecidos com o pedido, marcando a origem de cada bloco, para o advogado conferir.",
+    papel: "lembrar",
+    exige: {},
+    emissor: "app/api/v1/acervo/minutas/route.ts",
+    fixo: {
+      razao:
+        "A minuta usa a assinatura de IA do escritório, a mesma da leitura de processo, e o modelo foi escolhido por medição. Trocar o modelo aqui mudaria a qualidade da minuta sem ninguém medir.",
+    },
+    sintomaDeFalha:
+      "O advogado pede a minuta e recebe a mensagem de que não foi possível escrevê-la agora, ou de que o limite de uso de IA do mês acabou.",
+    registraEm: "llm_calls",
+  },
 ] as const;
 
 /** Índice por id, para quem resolve um binding. */
