@@ -41,6 +41,7 @@ import type pg from 'pg';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
 import { deriveLgpdFromContact } from '../guardrails/lgpd/legal-basis';
 import { textoDoAviso, type MotivoDoAviso } from '@/lib/escalacao/aviso-ao-lead';
+import { comIdentificacaoSeForOPrimeiro } from '@/lib/oab/identificacao-do-aviso'; // AdvTec (fork), travas da OAB
 // Dois `MotivoDoAviso` no repositório, e eles respondem perguntas DIFERENTES: o
 // de cima é "que frase o cliente lê"; este é "por que o cliente NÃO leu nada".
 // O apelido existe para que ninguém os confunda numa leitura rápida.
@@ -154,6 +155,16 @@ export async function avisarLeadDaEscalacao(
       error: err instanceof Error ? err.message.slice(0, 120) : 'erro desconhecido',
     });
     body = textoDoAviso(opts.motivo, null, ids.leadId, idioma);
+  }
+
+  // AdvTec — o aviso das travas da OAB que for o 1º envio da conversa, sem template de disclosure,
+  // abre com a identificação como atendimento automatizado (lib/oab/identificacao-do-aviso.ts).
+  if (opts.motivo === 'advogado_vai_responder' || opts.motivo === 'advogado_vai_assumir') {
+    try {
+      body = await comIdentificacaoSeForOPrimeiro(pool, ids, body, idioma);
+    } catch {
+      // A leitura falhou: o aviso sai sem a frase. O aviso não pode depender dela.
+    }
   }
 
   try {

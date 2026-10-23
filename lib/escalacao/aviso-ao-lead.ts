@@ -74,6 +74,8 @@ export type MotivoDoAviso =
   | "advogado_vai_responder"
   /** AdvTec: a triagem achou urgência jurídica no que o cliente escreveu — o advogado foi avisado na hora. */
   | "urgencia_juridica"
+  /** AdvTec: o mesmo, num turno SEM mensagem do cliente (follow-up) — não dá para dizer "sua mensagem". */
+  | "advogado_vai_assumir"
   /** O sistema decidiu escalar (sentimento, baixa confiança, etapa, termo jurídico…). */
   | "outro";
 
@@ -148,6 +150,12 @@ const ABERTURAS: Record<MotivoDoAviso, readonly string[]> = {
     "Para isso, o ideal é falar com o advogado responsável. Passei sua mensagem para ele agora.",
     "Quem pode orientar você sobre isso é o advogado. Deixei sua conversa com ele.",
   ],
+  // AdvTec: turno sem mensagem do cliente (retomada). Não fala em "sua mensagem".
+  advogado_vai_assumir: [
+    "O advogado do escritório vai continuar esta conversa com você. Já deixei o seu atendimento com ele.",
+    "Passei esta conversa para o advogado responsável, que segue com você a partir daqui.",
+    "A partir daqui, quem continua com você é o advogado do escritório. Já avisei a ele.",
+  ],
   outro: [
     "Esse caso é melhor resolvido por uma pessoa. Já acionei o time.",
     "Prefiro não arriscar aqui: passei seu pedido para um atendente humano.",
@@ -212,6 +220,11 @@ const ABERTURAS_ES: Record<MotivoDoAviso, readonly string[]> = {
     "Este asunto debe responderlo un abogado del despacho. Ya le pasé tu mensaje.",
     "Para eso lo ideal es hablar con el abogado responsable. Le pasé tu mensaje ahora mismo.",
     "Quien puede orientarte sobre esto es el abogado. Dejé tu conversación con él.",
+  ],
+  advogado_vai_assumir: [
+    "El abogado del despacho continuará esta conversación contigo. Ya dejé tu atención con él.",
+    "Pasé esta conversación al abogado responsable, que sigue contigo desde aquí.",
+    "A partir de aquí, quien continúa contigo es el abogado del despacho. Ya le avisé.",
   ],
   outro: [
     "Esto lo resuelve mejor una persona del equipo. Ya les avisé.",
