@@ -27,13 +27,19 @@ import { alcance, arestas, arquivosDeProducao, rel } from "./_grafo-de-importaca
  * reprovaria o legítimo, e trava que reprova o legítimo é trava que alguém desliga.
  * O que tira a peça do escritório é chamada de rede; é isso que se conta.
  *
- * ═══ HOJE A PROVA VALE POR AUSÊNCIA DE CAMINHO ═══
+ * ═══ QUEM USA A MINUTA, E A TRAVA DE RELEITURA ═══
  *
- * Nenhum arquivo de produção importa a minuta (só testes e `scripts/mutar-minuta.mjs`).
- * O lado "quem usa" passa sem examinar nada — por isso existe a TRAVA DE RELEITURA
- * abaixo: no dia em que o primeiro arquivo de produção ligar a minuta, ela fica
- * vermelha e obriga alguém a reler esta prova antes de seguir (e a tirar a trava de
- * propósito, num PR que diga por quê).
+ * Até 22/10/2026 nenhum arquivo de produção importava a minuta. Em 23/10/2026 entrou
+ * o primeiro: `app/api/v1/acervo/minutas/route.ts` (0005.E2, a conferência pelo
+ * advogado). Prova relida antes de abrir a trava. A rota:
+ *   - lê o acervo com a SESSÃO (transporte do Supabase, já na lista permitida);
+ *   - chama embedding e modelo pela biblioteca de IA (fora do grafo — o mesmo
+ *     limite declarado abaixo, decisão da 0002);
+ *   - devolve a minuta e o texto do arquivo SÓ para quem pediu, na resposta HTTP;
+ *     não grava, não enfileira, não chama canal. O advogado baixa no navegador.
+ * O braço "ninguém que usa a minuta alcança rede fora da lista" agora examina a rota.
+ * A TRAVA continua: ela aceita exatamente esta rota. O próximo arquivo de produção
+ * que importar a minuta fica vermelho e obriga a reler esta prova de novo.
  *
  * ═══ O QUE ESTE TESTE NÃO PROVA ═══
  *
@@ -188,9 +194,9 @@ describe("controles: a varredura enxerga o que diz enxergar", () => {
   });
 });
 
-describe("TRAVA DE RELEITURA — hoje a prova vale porque ninguém em produção usa a minuta", () => {
-  it("nenhum arquivo de produção importa a minuta; quando o primeiro importar, releia esta prova e só então tire a trava", () => {
-    expect(quemUsa(MINUTA).map(rel)).toEqual([]);
+describe("TRAVA DE RELEITURA — quem usa a minuta em produção foi relido, um por um", () => {
+  it("só a rota da conferência (relida em 23/10/2026) importa a minuta; um novo importador obriga a reler esta prova", () => {
+    expect(quemUsa(MINUTA).map(rel).sort()).toEqual(["app/api/v1/acervo/minutas/route.ts"]);
   });
 });
 
