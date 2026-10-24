@@ -34,6 +34,13 @@ beforeAll(async () => {
     values($1::uuid,$1::text,'Teste Agenda','Teste Agenda','America/Sao_Paulo')`,
     [org],
   );
+  // AdvTec: este arquivo mede outra coisa; as travas da OAB (camada padrão LIGADA) vetariam a 1ª
+  // mensagem sem identificação de máquina. A cobertura delas está em travas-da-oab-no-turno.
+  await pool.query(
+    `insert into org_guardrail_layers (organization_id, layer, enabled) values ($1,'travas_oab',false)
+     on conflict (organization_id, layer) do update set enabled = false`,
+    [org],
+  );
   await pool.query(
     `insert into contacts(id,organization_id,name,phone_number)
     values($1,$2,'Cliente Fictícia','+5511900000100')`,

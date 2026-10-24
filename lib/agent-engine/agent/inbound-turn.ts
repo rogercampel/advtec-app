@@ -227,6 +227,22 @@ import {
   type JailbreakLevel,
 } from '../guardrails/jailbreak/classifier';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
+// AdvTec (fork), travas da OAB
+import {
+  CODIGO_TRAVA_OAB,
+  CODIGO_TRAVA_OAB_IDENTIFICACAO,
+  CODIGO_TRAVA_OAB_PEDIU_HUMANO,
+  desfechoDaTravaDaOab,
+  INSTRUCAO_DE_REFORMULAR,
+  MENSAGEM_DE_ENTREGA_AO_ADVOGADO,
+  motivosDosValoresDoTemplate,
+  motivosDoTrace,
+  rotulosDosMotivos,
+  VETOS_ATE_ENTREGAR,
+  VETOS_ATE_INJETAR_IDENTIFICACAO,
+} from '@/lib/oab/gate-das-travas';
+import { modeloJaRespondeuAoContato } from '@/lib/oab/primeira-resposta';
+import { defereAoAdvogado } from '@/lib/oab/travas';
 import {
   nivelFinalDaManipulacao,
   perguntarManipulacaoAoJev,
@@ -2571,6 +2587,15 @@ async function executarTurnoDoAgente(
   const mensagemDoJob =
     currentInboundText ?? latestInboundSignal(openingContext.context.messages);
   const inboundsPendentes = inboundsNaoRespondidos(openingContext.context.messages);
+  // AdvTec: o que o cliente disse e este turno vai responder, para as travas da OAB.
+  // Rajada coalescida entra INTEIRA (a pergunta de mérito pode estar na 1ª mensagem);
+  // sem pendente, vale a mensagem do job. Sem TEXTO (mídia ainda sem derivação, por exemplo) é
+  // `null`: houve entrada do cliente, então vale só a conferência das proibições da resposta —
+  // o "sem mensagem → entrega" de `decideResposta` é para quando não há entrada nenhuma.
+  const textoDoClienteNoTurno = (inboundsPendentes.length > 0 ? inboundsPendentes : [mensagemDoJob])
+    .join('\n')
+    .trim();
+  const mensagemDoClienteNoTurno = textoDoClienteNoTurno === '' ? null : textoDoClienteNoTurno;
   if (
     !preview &&
     inboundsPendentes.some(
@@ -2926,6 +2951,10 @@ async function executarTurnoDoAgente(
   // Contador do fail-safe do gate de afirmação clínica (`clinical_claim`): 1º veto ensina;
   // persistir abre caso para a equipe — e o envio continua barrado. Por turno (closure).
   let clinicalClaimVetoCount = 0;
+  // AdvTec — travas da OAB, por turno (closure): vetos `trava_oab` (o 1º ensina, o 2º entrega
+  // ao advogado) e recusas de identificação (a partir da 2ª o gate emenda a frase padrão).
+  let travaOabVetoCount = 0;
+  let identificacaoOabVetoCount = 0;
   // Uma recusa deste tipo devolve o texto confirmado ao modelo para que ele
   // reescreva antes de falar com o cliente. Não gasta envio nem toca no canal.
   let falseEmptyInboundVetoCount = 0;
@@ -2978,6 +3007,51 @@ async function executarTurnoDoAgente(
       });
     });
   };
+  // AdvTec — travas da OAB (spec 0001, E2/E3): o filtro de saída barrou a resposta do
+  // modelo DE NOVO (o 1º veto do turno ensinou; este é o 2º, ou um pedido de pessoa). O sistema
+  // AVISA o cliente e SÓ ENTÃO entrega a conversa ao advogado (`force_human` arma o `stopGate`,
+  // que vetaria o aviso — a mesma ordem do desvio "pediu humano"). O texto barrado nunca sai.
+  // Molde: aquele desvio, na abertura do turno.
+  const entregarAoAdvogadoPorTrava = async (motivosEmPortugues: string): Promise<void> => {
+    passouParaAEquipe = true;
+    pararDigitando();
+    const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
+      ...avisoDaEscalacao().base,
+      // Sem mensagem do cliente (follow-up) o aviso não pode dizer "sua mensagem".
+      motivo: eTurnoDeResposta(liveJob()) ? 'advogado_vai_responder' : 'advogado_vai_assumir',
+    });
+    const briefing = montarBriefingDaPassagem({
+      checkpoint: previous,
+      pendentesDoCliente: inboundsPendentes,
+      motivo: { codigo: 'trava_da_oab' },
+      declaradoPeloModelo: {
+        tentativas: [
+          {
+            o_que: 'O assistente tentou responder ao cliente',
+            desfecho: desfechoDaTravaDaOab(motivosEmPortugues, outcomes.length),
+          },
+        ],
+      },
+    });
+    await performHumanHandoff(
+      pool,
+      { tenantId, leadId, conversationId: input.conversationId },
+      {
+        reason: 'trava_da_oab',
+        conversationSummary: briefing.body,
+        passagem: { origem: 'trava_de_saida', motivoCodigo: 'trava_da_oab', briefing },
+        avisoAoLead: aviso,
+        log: runLog,
+      },
+    );
+    runLog.info('handoff humano acionado pelas travas da OAB (resposta do modelo barrada)', {
+      kind: liveJob().kind,
+      lead_avisado: aviso.avisado,
+    });
+  };
+  // As travas da OAB valem neste turno? Ligadas por padrão (a spec proíbe conversa real sem
+  // elas) e só fora do Testar (a prévia monta o próprio contexto: `preview.ts`).
+  const travasArmadas = !preview && camadaLigada(camadas.travas_oab, true);
   // Arma o `agendaStallGate` (before-send.ts): true assim que crm_find_free_slots,
   // crm_book_appointment ou crm_reschedule_appointment executar neste turno — marcado no
   // wrapper das tools MCP, mais abaixo. `send_message` lê o valor NO MOMENTO do envio; como
@@ -3195,6 +3269,20 @@ async function executarTurnoDoAgente(
           };
         }
 
+        // AdvTec — travas da OAB: o texto FIXO do template é da organização e não é julgado, mas os
+        // VALORES das variáveis são escritos pelo modelo. Violação conta como veto `trava_oab`
+        // (mesmo contador do `send_message`): o 1º ensina, o 2º entrega ao advogado.
+        if (travasArmadas) {
+          const motivosDosValores = motivosDosValoresDoTemplate(values);
+          if (motivosDosValores.length > 0) {
+            travaOabVetoCount += 1;
+            if (travaOabVetoCount < VETOS_ATE_ENTREGAR) {
+              return { ok: false, error: { code: CODIGO_TRAVA_OAB, message: INSTRUCAO_DE_REFORMULAR } };
+            }
+            await entregarAoAdvogadoPorTrava(rotulosDosMotivos(motivosDosValores));
+            return { ok: false, error: { code: CODIGO_TRAVA_OAB, message: MENSAGEM_DE_ENTREGA_AO_ADVOGADO } };
+          }
+        }
         const rendered = renderTemplateBody(linha.components, values, {
           name: template_name,
           language,
@@ -3534,6 +3622,35 @@ async function executarTurnoDoAgente(
               : false;
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
+          // AdvTec — o que o gate das travas da OAB precisa saber NESTE envio. "Primeira resposta"
+          // é do MODELO (lib/oab/primeira-resposta.ts): na dúvida (a consulta falhou), cobra a
+          // identificação — o lado seguro. A deferência pode já ter saído noutra bolha do turno.
+          let travasOabDoEnvio:
+            | {
+                mensagemDoCliente: string | null;
+                primeiraRespostaDoModelo: boolean;
+                deferiuNoTurno: boolean;
+                injetaIdentificacao: boolean;
+              }
+            | undefined;
+          if (travasArmadas) {
+            let jaRespondeu = outcomes.length > 0 || corposEnviados.length > 0;
+            if (!jaRespondeu) {
+              try {
+                jaRespondeu = await modeloJaRespondeuAoContato(pool, tenantId, leadId);
+              } catch (err) {
+                runLog.warn('travas da OAB: não deu para saber se o modelo já respondeu — cobra a identificação', {
+                  error: err instanceof Error ? err.message.slice(0, 120) : 'erro desconhecido',
+                });
+              }
+            }
+            travasOabDoEnvio = {
+              mensagemDoCliente: eTurnoDeResposta(liveJob()) ? mensagemDoClienteNoTurno : null,
+              primeiraRespostaDoModelo: !jaRespondeu,
+              deferiuNoTurno: corposEnviados.some((corpo) => defereAoAdvogado(corpo)),
+              injetaIdentificacao: identificacaoOabVetoCount >= VETOS_ATE_INJETAR_IDENTIFICACAO,
+            };
+          }
           const beforeSendArgs = {
             pool,
             log: runLog,
@@ -3576,6 +3693,11 @@ async function executarTurnoDoAgente(
             // `GateContext.clinicalClaimEnforced`. Sem linha, desligada: não há padrão de
             // ambiente para uma proteção que só faz sentido em saúde.
             enforceClinicalClaim: camadaLigada(camadas.afirmacao_clinica, false),
+            // AdvTec — travas da OAB sobre o corpo do MODELO (`lib/oab/gate-das-travas.ts`).
+            // `mensagemDoCliente` é o que este turno responde; turno sem mensagem nova
+            // (follow-up) só confere as proibições. Fora do Testar e com a camada desligada,
+            // `travasOabDoEnvio` é `undefined` e o gate é no-op.
+            ...(travasOabDoEnvio !== undefined ? { travasOab: travasOabDoEnvio } : {}),
             // Mesmo padrão do vocabulário interno: só o `send_message` arma — é o único
             // corpo escrito pelo modelo. `active` é ter QUALQUER ferramenta de agenda:
             // um agente que só CONSULTA promete "vou verificar" igual, e enquanto a
@@ -3837,6 +3959,27 @@ async function executarTurnoDoAgente(
               hasOpenCase: hasOpenCase || openedCaseThisTurn,
               enforceInternalVocabulary: false,
             });
+          }
+          if (chain.status === 'vetoed' && chain.code === CODIGO_TRAVA_OAB_IDENTIFICACAO) {
+            // AdvTec — identificação da 1ª resposta: retentável. Na 3ª tentativa o gate emenda a
+            // frase padrão (`injetaIdentificacao`), então o cliente nunca fica sem resposta.
+            identificacaoOabVetoCount += 1;
+            return { ok: false, error: { code: chain.code, message: chain.message } };
+          }
+          if (
+            chain.status === 'vetoed' &&
+            (chain.code === CODIGO_TRAVA_OAB || chain.code === CODIGO_TRAVA_OAB_PEDIU_HUMANO)
+          ) {
+            // AdvTec — trava da OAB. O texto barrado NUNCA sai. O 1º veto do turno é erro
+            // instrutivo (o modelo reformula deferindo ao advogado); o 2º, ou o pedido de pessoa
+            // (reformular não resolve), entrega a conversa ao advogado. O gate só arma fora do
+            // Testar, então aqui há canal.
+            travaOabVetoCount += 1;
+            if (chain.code === CODIGO_TRAVA_OAB && travaOabVetoCount < VETOS_ATE_ENTREGAR) {
+              return { ok: false, error: { code: chain.code, message: chain.message } };
+            }
+            await entregarAoAdvogadoPorTrava(motivosDoTrace(chain.trace));
+            return { ok: false, error: { code: chain.code, message: MENSAGEM_DE_ENTREGA_AO_ADVOGADO } };
           }
           if (chain.status === 'vetoed') {
             // Cap de warm-up/diário: reescrever o texto não resolve (é rate limit, não

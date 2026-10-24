@@ -72,7 +72,7 @@ export interface ConferenciaDeSaida {
    * a tela deixa de encontrar o estado e mostra "carregando…" para sempre —
    * aconteceu ao escrever isto, e o teste de componente pegou.
    */
-  camada: "promessa_semantica" | "jailbreak" | "afirmacao_clinica" | null;
+  camada: "promessa_semantica" | "jailbreak" | "afirmacao_clinica" | "travas_oab" | null;
 }
 
 /**
@@ -212,6 +212,26 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     escolha: null,
     porQueNaoSeDesliga: "Esconder que é um assistente é enganar o cliente.",
      camada: null,
+  },
+  {
+    nome: "travas_oab",
+    rotulo: "Respeitar as vedações da OAB",
+    oQueProtege:
+      "Barra a resposta que opina sobre o caso, promete resultado, cita valor ou prazo de ganho, " +
+      "faz propaganda ou deixa de dizer que é um atendimento automatizado. O texto barrado " +
+      "nunca é enviado: o assistente reformula uma vez, e se esbarrar de novo a conversa é " +
+      "entregue ao advogado.",
+    escolha: {
+      // Desligar é escolha da organização, mas a tela precisa dizer o que ela dispensa.
+      custo:
+        "Não custa nada. Vem ligada. ATENÇÃO: desligar esta camada dispensa a vedação da OAB no " +
+        "atendimento — o assistente passa a poder prometer resultado, opinar sobre o caso e citar " +
+        "valor ou prazo sem que nada o barre. Só desligue se uma pessoa confere cada resposta " +
+        "antes de sair.",
+      consultaModelo: false,
+    },
+    porQueNaoSeDesliga: "",
+    camada: "travas_oab",
   },
 ];
 

@@ -92,7 +92,7 @@ describe("o motivo da passagem acionada pela ferramenta", () => {
     expect(consulta(/update conversations/).params[3]).toBe(texto);
   });
 
-  it.each(["inventado", "orcamento_de_ia", "suspected_optout", "caso_escalado", "verificacao_manual", "__proto__", "", null, 1])(
+  it.each(["inventado", "orcamento_de_ia", "suspected_optout", "caso_escalado", "verificacao_manual", "trava_da_oab", "__proto__", "", null, 1])(
     "recusa motivo inválido ou reservado %j antes dos efeitos do wrapper",
     async (motivo_codigo) => {
       expect(await passar({ motivo_codigo })).toMatchObject({ ok: false, error: { code: "invalid_payload" } });

@@ -71,6 +71,8 @@ export const ORIGENS_DA_PASSAGEM = [
   "legado_teto",
   "mcp_externo",
   "runtime_nativo",
+  // AdvTec: a resposta do modelo esbarrou numa trava da OAB no filtro de saída.
+  "trava_de_saida",
 ] as const;
 export type OrigemDaPassagem = (typeof ORIGENS_DA_PASSAGEM)[number];
 
@@ -95,6 +97,9 @@ export const MOTIVOS_DA_PASSAGEM = [
   // pediu uma pessoa — mentir no rótulo faria quem assume abrir com um
   // agradecimento que ninguém pediu. Par da migration 0693.
   "verificacao_manual",
+  // AdvTec: o filtro de saída barrou a resposta (promessa, opinião sobre o caso, valor…) e
+  // a conversa foi entregue ao advogado. Par da migration 9010.
+  "trava_da_oab",
 ] as const;
 export type MotivoDaPassagem = (typeof MOTIVOS_DA_PASSAGEM)[number];
 
@@ -140,6 +145,7 @@ export const FRASE_DO_MOTIVO = {
   refund_mention: "A conversa tocou em reembolso",
   caso_escalado: "Uma pessoa da equipe escalou um atendimento",
   verificacao_manual: "Um fluxo automático coletou dados e passou a conversa para verificação humana",
+  trava_da_oab: "A resposta do assistente esbarrou numa vedação da OAB e a conversa foi entregue ao advogado",
 } satisfies Record<MotivoDaPassagem, string>;
 
 /**

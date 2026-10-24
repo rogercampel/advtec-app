@@ -344,6 +344,10 @@ describe("a primeira resposta se identifica como máquina", () => {
   it.each([
     "Olá! Este é o atendimento automático do escritório.",
     "Sou um assistente virtual e vou te ajudar.",
+    // Com artigo definido: a redação mais comum de apresentação (23/10/2026). Sem o "o"/"a" na
+    // regra, o gate de saída vetava a própria frase que a mensagem de veto sugere ao modelo.
+    "Sou o assistente virtual do escritório.",
+    "Somos a assistente automática do escritório.",
     "Não sou advogado — faço a triagem inicial.",
   ])("reconhece a identificação: %s", (texto) => {
     expect(seIdentificaComoMaquina(texto)).toBe(true);

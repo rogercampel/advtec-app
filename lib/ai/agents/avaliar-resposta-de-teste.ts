@@ -76,6 +76,12 @@ const NAO_AVALIAVEIS_SEM_TURNO: ReadonlyArray<{ gate: string; porque: string }> 
     porque:
       "depende de a organização ter ligado \"Não fazer afirmação clínica\" em Segurança; quando ligada, a prévia do motor aplica",
   },
+  {
+    // AdvTec: o Testar ainda não arma as travas da OAB (só o turno real as arma).
+    gate: "travas_oab",
+    porque:
+      "depende da mensagem do cliente que o assistente está respondendo; o Testar ainda não aplica as vedações da OAB, que valem na conversa real",
+  },
 ];
 
 /**

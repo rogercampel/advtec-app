@@ -199,6 +199,13 @@ beforeAll(async () => {
      values ($1,'turno-mudo','Turno Mudo','Turno Mudo') on conflict (id) do nothing`,
     [ORG],
   );
+  // AdvTec: este arquivo mede outra coisa; as travas da OAB (camada padrão LIGADA) vetariam a 1ª
+  // mensagem sem identificação de máquina. A cobertura delas está em travas-da-oab-no-turno.
+  await pool.query(
+    `insert into org_guardrail_layers (organization_id, layer, enabled) values ($1,'travas_oab',false)
+     on conflict (organization_id, layer) do update set enabled = false`,
+    [ORG],
+  );
   await pool.query(
     `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
      values ($1,$2,'turno-mudo-session','WORKING','\\x00'::bytea) on conflict (id) do nothing`,

@@ -35,6 +35,7 @@ vi.mock("@/lib/api/client", () => ({
         camadas: [
           { layer: "promessa_semantica", escolha: null, padraoDoAmbiente: true, efetivo: true },
           { layer: "jailbreak", escolha: false, padraoDoAmbiente: true, efetivo: false },
+          { layer: "travas_oab", escolha: null, padraoDoAmbiente: true, efetivo: true },
         ],
         podeEditar: true,
       },
@@ -76,7 +77,7 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
     ]);
   });
 
-  it("EXATAMENTE dois interruptores — um por camada que custa dinheiro", async () => {
+  it("EXATAMENTE dois interruptores de camada PAGA — mais dois de escolha sem custo (clínica e OAB)", async () => {
     // ⚠️ ESTE CASO JÁ AFIRMOU O CONTRÁRIO, e a mudança é deliberada. Enquanto o
     // motor lia só o `.env`, a asserção certa era ZERO interruptores: um controle
     // que a tela grava e o código ignora é pior que controle nenhum. Depois que a
@@ -98,11 +99,17 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
     // afirmação clínica é o terceiro interruptor de conferência, mas não é paga — é
     // escolha porque só serve a saúde —, e por isso é contada à parte: assim uma camada
     // paga nova ainda reprova aqui.
+    //
+    // AdvTec: as vedações da OAB (`travas_oab`) são o quarto interruptor de conferência. Também
+    // não é paga — é regra determinística, sem modelo —, e é escolha da organização porque o
+    // produto não pode decidir sozinho que ela fique sem a proteção; por isso também é contada à
+    // parte, e as PAGAS seguem sendo duas. A forma do teste é: pagas = 2 (lista), interruptores =
+    // pagas + as gratuitas que o produto deixa escolher (clínica e OAB) = 4.
     const { container } = renderPainel();
     await waitFor(() =>
       expect(
         container.querySelectorAll('[data-testid^="conferencia-"][role="switch"]'),
-      ).toHaveLength(3),
+      ).toHaveLength(4),
     );
     const pagas = [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA].filter(
       (c) => c.escolha?.consultaModelo === true,
@@ -111,9 +118,16 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
     expect(screen.getByTestId("conferencia-semantic_promise-liga")).toBeTruthy();
     expect(screen.getByTestId("conferencia-jailbreak_detect-liga")).toBeTruthy();
     expect(screen.getByTestId("conferencia-clinical_claim-liga")).toBeTruthy();
+    expect(screen.getByTestId("conferencia-travas_oab-liga")).toBeTruthy();
+    // As gratuitas com interruptor são exatamente estas duas: uma camada nova sem custo também
+    // tem de ser contada aqui, de propósito.
+    const gratuitasComEscolha = [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA].filter(
+      (c) => c.escolha !== null && c.escolha.consultaModelo === false && c.camada !== null,
+    );
+    expect(gratuitasComEscolha.map((c) => c.nome).sort()).toEqual(["clinical_claim", "travas_oab"]);
 
     // E o interruptor do estilo existe, FORA do cartão das conferências: se ele
-    // migrar para dentro da lista, a contagem acima volta a três e reprova.
+    // migrar para dentro da lista, a contagem acima sobe para cinco e reprova.
     const estilo = screen.getByTestId("ajuste-sem-travessao-longo");
     expect(estilo).toBeTruthy();
     expect(
@@ -170,6 +184,15 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
       // Proibição sem razão é o que faz alguém procurar como contornar.
       expect(linha.textContent?.length ?? 0).toBeGreaterThan(50);
     }
+  });
+
+  it("a camada da OAB avisa que desligá-la dispensa a vedação da OAB no atendimento", async () => {
+    renderPainel();
+    await waitFor(() => expect(screen.getByTestId("conferencia-travas_oab-liga")).toBeTruthy());
+    const linha = screen.getByTestId("conferencia-travas_oab-escolha").textContent ?? "";
+    expect(linha).toContain("Não custa nada");
+    expect(linha).toContain("desligar esta camada dispensa a vedação da OAB");
+    expect(linha).toContain("Só desligue se uma pessoa confere cada resposta");
   });
 
   it("a conferência de fato diz ONDE se liga, e não que não se desliga", () => {

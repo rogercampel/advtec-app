@@ -70,6 +70,10 @@ export type MotivoDoAviso =
   | "suspeita_de_opt_out"
   /** O teto de gasto com IA parou o atendimento automático. */
   | "orcamento_de_ia"
+  /** AdvTec: o filtro de saída (travas da OAB) barrou a resposta — quem responde é o advogado. */
+  | "advogado_vai_responder"
+  /** AdvTec: o mesmo, num turno SEM mensagem do cliente (follow-up) — não dá para dizer "sua mensagem". */
+  | "advogado_vai_assumir"
   /** O sistema decidiu escalar (sentimento, baixa confiança, etapa, termo jurídico…). */
   | "outro";
 
@@ -81,6 +85,7 @@ export function motivoDoAviso(reason: string): MotivoDoAviso {
   if (reason === "requested_human") return "pediu_humano";
   if (reason === "suspected_optout") return "suspeita_de_opt_out";
   if (reason === "orcamento_de_ia") return "orcamento_de_ia";
+  if (reason === "trava_da_oab") return "advogado_vai_responder";
   return "outro";
 }
 
@@ -126,6 +131,18 @@ const ABERTURAS: Record<MotivoDoAviso, readonly string[]> = {
     "Vou passar seu atendimento para uma pessoa da equipe.",
     "A partir daqui quem continua com você é alguém do time.",
     "Estou transferindo esta conversa para um atendente humano.",
+  ],
+  // AdvTec: não promete prazo nem opina; diz só que quem responde é o advogado.
+  advogado_vai_responder: [
+    "Esse assunto precisa ser respondido por um advogado do escritório. Já encaminhei sua mensagem a ele.",
+    "Para isso, o ideal é falar com o advogado responsável. Passei sua mensagem para ele agora.",
+    "Quem pode orientar você sobre isso é o advogado. Deixei sua conversa com ele.",
+  ],
+  // AdvTec: turno sem mensagem do cliente (retomada). Não fala em "sua mensagem".
+  advogado_vai_assumir: [
+    "O advogado do escritório vai continuar esta conversa com você. Já deixei o seu atendimento com ele.",
+    "Passei esta conversa para o advogado responsável, que segue com você a partir daqui.",
+    "A partir daqui, quem continua com você é o advogado do escritório. Já avisei a ele.",
   ],
   outro: [
     "Esse caso é melhor resolvido por uma pessoa. Já acionei o time.",
@@ -181,6 +198,16 @@ const ABERTURAS_ES: Record<MotivoDoAviso, readonly string[]> = {
     "Voy a pasar tu atención a una persona del equipo.",
     "A partir de aquí te atiende alguien del equipo.",
     "Estoy transfiriendo esta conversación a una persona del equipo.",
+  ],
+  advogado_vai_responder: [
+    "Este asunto debe responderlo un abogado del despacho. Ya le pasé tu mensaje.",
+    "Para eso lo ideal es hablar con el abogado responsable. Le pasé tu mensaje ahora mismo.",
+    "Quien puede orientarte sobre esto es el abogado. Dejé tu conversación con él.",
+  ],
+  advogado_vai_assumir: [
+    "El abogado del despacho continuará esta conversación contigo. Ya dejé tu atención con él.",
+    "Pasé esta conversación al abogado responsable, que sigue contigo desde aquí.",
+    "A partir de aquí, quien continúa contigo es el abogado del despacho. Ya le avisé.",
   ],
   outro: [
     "Esto lo resuelve mejor una persona del equipo. Ya les avisé.",

@@ -27,6 +27,7 @@ vi.mock("@/hooks/ai/useGuardrailLayers", () => ({
       camadas: [
         { layer: "promessa_semantica", escolha: false, padraoDoAmbiente: false, efetivo: false },
         { layer: "jailbreak", escolha: false, padraoDoAmbiente: false, efetivo: false },
+        { layer: "travas_oab", escolha: false, padraoDoAmbiente: true, efetivo: false },
       ],
       podeEditar: true,
     },
@@ -67,7 +68,10 @@ describe("o interruptor de segurança grava a camada, não o nome de tela", () =
 
     expect(gravar).toHaveBeenCalledTimes(1);
     expect(gravar).toHaveBeenCalledWith({ layer: c.camada, enabled: true });
-    // O nome de tela NÃO pode chegar à rota: é o valor que ela recusa com 422.
-    expect(gravar).not.toHaveBeenCalledWith(expect.objectContaining({ layer: c.nome }));
+    // O nome de tela NÃO pode chegar à rota: é o valor que ela recusa com 422. (AdvTec: em
+    // `travas_oab` nome e camada são o mesmo literal, e aí não há nome de tela a distinguir.)
+    if (c.nome !== c.camada) {
+      expect(gravar).not.toHaveBeenCalledWith(expect.objectContaining({ layer: c.nome }));
+    }
   });
 });

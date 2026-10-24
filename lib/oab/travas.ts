@@ -165,8 +165,10 @@ const REGRAS: Regra[] = [
  * por cumprida quando o robô só ECOAVA a pergunta do cliente: "Você perguntou
  * se isso é um atendimento automático" passava como identificação.
  */
+// "Sou o/a assistente virtual…" é a redação mais comum de apresentação; sem o artigo aqui, o
+// gate de saída vetaria a própria frase que a mensagem de veto sugere ao modelo.
 const IDENTIFICACAO = [
-  /(sou|somos)\s+(um |uma )?(assistente|atendimento|robo|sistema|bot|agente)/,
+  /(sou|somos)\s+(um |uma |o |a )?(assistente|atendimento|robo|sistema|bot|agente)/,
   /(este|esta|isto|isso|aqui)\s+(e|se trata de)\s+(um |uma |o |a )?(atendimento|mensagem|resposta|assistente)\s*(automatic|automatiz|virtual)/,
   /mensagem automatica/,
   /atendimento (automatico|automatizado|virtual) d(o|a) escritorio/,
@@ -181,7 +183,7 @@ export function seIdentificaComoMaquina(texto: string): boolean {
   // O eco só desqualifica quando NÃO há identificação em primeira pessoa. A
   // primeira versão vetava "Você perguntou sobre X. Sou um assistente virtual",
   // que é a resposta certa. Achado pelo segundo leitor.
-  const primeiraPessoa = /(sou|somos)\s+(um |uma )?(assistente|atendimento|robo|sistema|bot|agente)/.test(t);
+  const primeiraPessoa = /(sou|somos)\s+(um |uma |o |a )?(assistente|atendimento|robo|sistema|bot|agente)/.test(t);
   if (ECO.test(t) && !primeiraPessoa) return false;
   return IDENTIFICACAO.some((r) => r.test(t));
 }
@@ -245,10 +247,11 @@ export type Contexto = {
   /**
    * Primeira resposta do agente nesta conversa: exige identificação.
    *
-   * ⚠️ Hoje nenhum código produz este valor — não existe caller. Quem ligar
-   * este módulo ao worker precisa calculá-lo, e enquanto não calcular, o
-   * critério 5 não está ligado em produção. Está escrito aqui porque buraco
-   * declarado vence texto plausível.
+   * Quem o calcula é o turno do agente (`inbound-turn.ts`), para o gate de saída
+   * (`gate-das-travas.ts`): `primeiraRespostaDoModelo` — nenhum envio aceito ESCRITO PELO
+   * MODELO antes neste contato (`primeira-resposta.ts`; template, aviso de escalação e
+   * follow-up determinístico não contam). A resposta de andamento do DJEN
+   * (`lib/djen/resposta-de-andamento.ts`) calcula o seu por conta própria.
    */
   primeiraResposta: boolean;
 };
@@ -279,10 +282,21 @@ export type Decisao =
 /**
  * O ponto por onde uma resposta ao cliente pode sair.
  *
- * ⚠️ "Ponto ÚNICO" seria mentira hoje: `git grep decideResposta` fora deste
- * módulo e do seu teste devolve zero. O worker de resposta do fork
- * (`workers/ai-response-worker.handler.ts`) não passa por aqui. Ligar isso é a
- * etapa E3, e até lá **este módulo não protege nada em produção**.
+ * Chamadores hoje: a resposta de andamento do DJEN (`lib/djen/resposta-de-andamento.ts`)
+ * e o gate `travas_oab` da cadeia `before_send` (`lib/oab/gate-das-travas.ts`), que
+ * cobre o `send_message` do agente no turno (`lib/agent-engine/agent/inbound-turn.ts`),
+ * com a camada `travas_oab` da organização ligada (padrão: ligada).
+ *
+ * ⚠️ "Ponto ÚNICO" continua sendo mentira. O que NÃO passa por aqui: o follow-up
+ * determinístico e o texto FIXO do `send_template` (escritos por gente, sem modelo; os
+ * VALORES das variáveis do template são do modelo e o turno os confere com `avalia`), a
+ * pergunta do roteiro e o aviso de escalação (texto do sistema), e o Testar do agente
+ * (`preview.ts`, que monta o próprio contexto e ainda não arma o gate). O critério 4
+ * vale no turno de resposta (`mensagemDoCliente` presente); no follow-up o gate só
+ * confere as proibições da resposta, porque não há mensagem nova a defender.
+ *
+ * Em NENHUM caso o texto barrado é enviado. No turno, o 1º veto é erro instrutivo (o modelo
+ * reformula deferindo ao advogado); o 2º entrega a conversa ao advogado.
  *
  * Recebe a mensagem do cliente de propósito: sem entrada não há saída. É a
  * forma estrutural de sustentar o critério 4 NESTE módulo — mas o fork tem

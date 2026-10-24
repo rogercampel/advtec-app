@@ -243,8 +243,8 @@ function proximoPasso(result: TriggerHandoffResult): string {
  * O `reason` que o agente externo mandou, reduzido ao vocabulário DESTE motor.
  *
  * `motivoCodigoDoTexto` conhece os dez motivos do banco; `triggerHandoff` grava
- * `conversations.last_handoff_reason` e aceita os sete dele. Os três que ficam de
- * fora (`suspected_optout`, `caso_escalado` e `verificacao_manual`) nascem de
+ * `conversations.last_handoff_reason` e aceita os sete dele. Os que ficam de
+ * fora (`suspected_optout`, `caso_escalado`, `verificacao_manual` e `trava_da_oab`) nascem de
  * caminhos internos — um agente externo que os escrevesse estaria declarando um
  * fato que ele não observou (`verificacao_manual` é o motivo com que o runtime
  * grava a passagem quando um fluxo determinístico entrega o turno). O texto
@@ -252,7 +252,10 @@ function proximoPasso(result: TriggerHandoffResult): string {
  */
 function motivoDoAgenteExterno(texto: string): HandoffReason {
   const codigo = motivoCodigoDoTexto(texto);
-  return codigo === "suspected_optout" || codigo === "caso_escalado" || codigo === "verificacao_manual"
+  return codigo === "suspected_optout" ||
+    codigo === "caso_escalado" ||
+    codigo === "verificacao_manual" ||
+    codigo === "trava_da_oab" // AdvTec: motivo interno do filtro de saída
     ? "requested_human"
     : codigo;
 }
