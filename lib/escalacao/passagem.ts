@@ -73,6 +73,8 @@ export const ORIGENS_DA_PASSAGEM = [
   "runtime_nativo",
   // AdvTec: a resposta do modelo esbarrou numa trava da OAB no filtro de saída.
   "trava_de_saida",
+  // AdvTec: a triagem jurídica no turno (urgência antes do modelo; conflito e área pela ferramenta).
+  "triagem_juridica",
 ] as const;
 export type OrigemDaPassagem = (typeof ORIGENS_DA_PASSAGEM)[number];
 
@@ -100,6 +102,12 @@ export const MOTIVOS_DA_PASSAGEM = [
   // AdvTec: o filtro de saída barrou a resposta (promessa, opinião sobre o caso, valor…) e
   // a conversa foi entregue ao advogado. Par da migration 9010.
   "trava_da_oab",
+  // AdvTec: triagem jurídica. Par da migration 9011.
+  "urgencia_juridica",
+  "triagem_conflito",
+  "triagem_area",
+  // A triagem recusou o contato (área que o escritório não atende): o advogado confere se a recusa estava certa.
+  "triagem_recusa",
 ] as const;
 export type MotivoDaPassagem = (typeof MOTIVOS_DA_PASSAGEM)[number];
 
@@ -146,6 +154,10 @@ export const FRASE_DO_MOTIVO = {
   caso_escalado: "Uma pessoa da equipe escalou um atendimento",
   verificacao_manual: "Um fluxo automático coletou dados e passou a conversa para verificação humana",
   trava_da_oab: "A resposta do assistente esbarrou numa vedação da OAB e a conversa foi entregue ao advogado",
+  urgencia_juridica: "O cliente descreveu uma urgência jurídica (prazo, audiência, pessoa presa…) e o advogado foi avisado",
+  triagem_recusa: "A triagem recusou este contato por ser de uma área que o escritório não atende — confira se a recusa estava certa",
+  triagem_conflito: "A triagem achou um possível conflito de interesses: a outra parte pode ser cliente do escritório (o cliente não foi avisado disso)",
+  triagem_area: "A triagem não conseguiu decidir se o escritório atende esse assunto e passou a decisão ao advogado",
 } satisfies Record<MotivoDaPassagem, string>;
 
 /**

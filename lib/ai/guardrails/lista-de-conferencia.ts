@@ -72,7 +72,7 @@ export interface ConferenciaDeSaida {
    * a tela deixa de encontrar o estado e mostra "carregando…" para sempre —
    * aconteceu ao escrever isto, e o teste de componente pegou.
    */
-  camada: "promessa_semantica" | "jailbreak" | "afirmacao_clinica" | "travas_oab" | null;
+  camada: "promessa_semantica" | "jailbreak" | "afirmacao_clinica" | "travas_oab" | "triagem_juridica" | null;
 }
 
 /**
@@ -250,4 +250,23 @@ export const CONFERENCIA_DE_ENTRADA: ConferenciaDeSaida = {
   escolha: { custo: "+1 consulta ao modelo por mensagem recebida", consultaModelo: true },
   porQueNaoSeDesliga: "",
   camada: "jailbreak",
+};
+
+/**
+ * AdvTec: a triagem jurídica também roda sobre o que o cliente escreve (urgência antes do
+ * modelo, recusa de área, conflito de interesses), e por isso fica junto da conferência de
+ * ENTRADA, fora da lista de saída — a ordem daquela lista é a da cadeia, e esta não é um gate.
+ */
+export const CONFERENCIA_DA_TRIAGEM: ConferenciaDeSaida = {
+  nome: "triagem_juridica",
+  rotulo: "Triagem jurídica do cliente",
+  oQueProtege:
+    "Lê o que o cliente escreve: se houver urgência (prazo correndo, audiência, pessoa presa), avisa o advogado na hora. " +
+    "Recusa com educação os assuntos que o escritório não atende e passa ao advogado os casos com possível conflito de interesses.",
+  escolha: {
+    custo: "Não custa nada. Vem ligada: urgência e conflito de interesses não podem passar despercebidos.",
+    consultaModelo: false,
+  },
+  porQueNaoSeDesliga: "",
+  camada: "triagem_juridica",
 };

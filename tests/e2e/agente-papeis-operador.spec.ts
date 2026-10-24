@@ -25,7 +25,7 @@ import { test, expect, type Browser, type Page } from "./helpers/test";
 
 import { loginComoAdmin, lerCreds, type CredsE2E } from "./helpers/login-admin";
 
-import { CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA } from "@/lib/ai/guardrails/lista-de-conferencia";
+import { CONFERENCIAS_DE_SAIDA, CONFERENCIA_DA_TRIAGEM, CONFERENCIA_DE_ENTRADA } from "@/lib/ai/guardrails/lista-de-conferencia";
 let creds: CredsE2E = lerCreds();
 
 test.use({ locale: "pt-BR" });
@@ -138,7 +138,7 @@ test.describe("A aba do papel que organiza o sistema", () => {
     // `e2e`, minutos depois e noutro job. A `main` ficou vermelha por isso.
     // Número escrito à mão envelhece calado; a expressão acompanha a lista.
     const itens = painel.locator('[data-testid^="item-conferencia-"]');
-    await expect(itens).toHaveCount([...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA].length);
+    await expect(itens).toHaveCount([...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA, CONFERENCIA_DA_TRIAGEM].length);
 
     // Um interruptor de CONFERÊNCIA por item que tem ESCOLHA na lista — e só
     // esses. O número também é DERIVADO: era o literal `2` (as duas camadas que
@@ -152,7 +152,8 @@ test.describe("A aba do papel que organiza o sistema", () => {
     // interruptor nele. E as camadas PAGAS seguem sendo exatamente as que se
     // declaram `consultaModelo` — quem quiser oferecer desligar uma proteção
     // fixa tem de mudar a lista, à vista, em vez de só o número daqui.
-    const comEscolha = [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA].filter((c) => c.escolha !== null);
+    // AdvTec: a triagem jurídica também é conferência com escolha (fica junto da de entrada).
+    const comEscolha = [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA, CONFERENCIA_DA_TRIAGEM].filter((c) => c.escolha !== null);
     expect(
       comEscolha.filter((c) => c.escolha?.consultaModelo).length,
       "as camadas pagas (que consultam modelo) continuam sendo duas",

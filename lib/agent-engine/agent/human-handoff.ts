@@ -153,6 +153,12 @@ export async function performHumanHandoff(
     conversationSummary: string;
     inboxTitle?: string;
     /**
+     * AdvTec: a severidade do item novo da Central. Default `critical` (toda passagem é urgente para quem
+     * assume). A triagem que RECUSA um contato passa `info`: é só pedido de conferência. Um item já
+     * aberto nunca é rebaixado, só elevado a `critical` por uma passagem crítica.
+     */
+    severidadeDaCentral?: 'info' | 'warn' | 'critical';
+    /**
      * Os fatos da passagem, para a LINHA de `passagens_de_atendimento`.
      *
      * OPCIONAL, e é escolha: `tests/invariants/escalacao-ciclo-humano.test.ts` é
@@ -343,12 +349,13 @@ export async function performHumanHandoff(
         order by created_at desc limit 1
      ), adendo as (
        update agent_inbox_items i
-          set body = coalesce(i.body, '') || chr(10) || chr(10) || $3, severity = 'critical'
+          set body = coalesce(i.body, '') || chr(10) || chr(10) || $3,
+              severity = case when $5::text = 'critical' then 'critical' else i.severity end
          from alvo where i.id = alvo.id
        returning i.id
      )
      insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
-     select $1, 'handoff', 'critical', $2, $3, 'conversation', $4
+     select $1, 'handoff', $5::text, $2, $3, 'conversation', $4
       where not exists (select 1 from alvo)`,
     [
       ids.tenantId,
@@ -361,6 +368,7 @@ export async function performHumanHandoff(
         ),
       await corpoDaCentral(db, ids.tenantId, opts),
       ids.conversationId,
+      opts.severidadeDaCentral ?? 'critical',
     ],
   );
 

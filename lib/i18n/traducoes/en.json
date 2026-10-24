@@ -4757,6 +4757,14 @@
   "Não prometer preço ou prazo por conta própria": "Not promise price or deadline on its own",
   "Conferir promessas em texto livre": "Check promises made in free text",
   "Não fazer afirmação clínica": "Make no clinical claims",
+  "O cliente descreveu uma urgência jurídica (prazo, audiência, pessoa presa…) e o advogado foi avisado": "The client described a legal emergency (deadline, hearing, someone detained…) and the lawyer was alerted",
+  "A triagem recusou este contato por ser de uma área que o escritório não atende — confira se a recusa estava certa": "Intake declined this contact because it is in an area the firm does not handle — check that the refusal was right",
+  "A triagem recusou este contato — confira se a recusa estava certa": "Intake declined this contact — check that the refusal was right",
+  "A triagem achou um possível conflito de interesses: a outra parte pode ser cliente do escritório (o cliente não foi avisado disso)": "Intake found a possible conflict of interest: the other party may be a client of the firm (the client was not told)",
+  "A triagem não conseguiu decidir se o escritório atende esse assunto e passou a decisão ao advogado": "Intake could not decide whether the firm handles this matter and handed the decision to the lawyer",
+  "Triagem jurídica do cliente": "Client legal intake",
+  "Lê o que o cliente escreve: se houver urgência (prazo correndo, audiência, pessoa presa), avisa o advogado na hora. Recusa com educação os assuntos que o escritório não atende e passa ao advogado os casos com possível conflito de interesses.": "Reads what the client writes: if there is an emergency (running deadline, hearing, someone detained), it alerts the lawyer right away. It politely declines matters the firm does not handle and hands cases with a possible conflict of interest to the lawyer.",
+  "Não custa nada. Vem ligada: urgência e conflito de interesses não podem passar despercebidos.": "Costs nothing. It comes turned on: emergencies and conflicts of interest must not go unnoticed.",
   "Respeitar as vedações da OAB": "Respect the Bar Association (OAB) restrictions",
   "Barra a resposta que opina sobre o caso, promete resultado, cita valor ou prazo de ganho, faz propaganda ou deixa de dizer que é um atendimento automatizado. O texto barrado nunca é enviado: o assistente reformula uma vez, e se esbarrar de novo a conversa é entregue ao advogado.": "Blocks a reply that gives an opinion on the case, promises a result, quotes an amount or a payout timeline, advertises, or fails to say it is an automated service. The blocked text is never sent: the assistant rephrases once, and if it runs into the rule again the conversation is handed over to the lawyer.",
   "Não custa nada. Vem ligada. ATENÇÃO: desligar esta camada dispensa a vedação da OAB no atendimento — o assistente passa a poder prometer resultado, opinar sobre o caso e citar valor ou prazo sem que nada o barre. Só desligue se uma pessoa confere cada resposta antes de sair.": "Costs nothing. It comes turned on. WARNING: turning this layer off waives the Bar Association (OAB) restrictions in the service: the assistant becomes free to promise results, give opinions on the case and quote amounts or timelines with nothing to stop it. Only turn it off if a person checks every reply before it goes out.",
@@ -9277,5 +9285,7 @@
   "Fluxo importado como rascunho.": "Flow imported as a draft.",
   "O arquivo não é um fluxo válido. Confira os itens abaixo e tente de novo.": "The file is not a valid flow. Check the items below and try again.",
   "Este arquivo é de um fluxo de atendimento, e os fluxos de atendimento estão desligados nesta instalação.": "This file is a service flow, and service flows are turned off in this installation.",
-  "Este fluxo ainda não tem caixas suficientes para exportar. Monte o fluxo no editor e salve antes.": "This flow doesn't have enough boxes to export yet. Build the flow in the editor and save it first."
+  "Este fluxo ainda não tem caixas suficientes para exportar. Monte o fluxo no editor e salve antes.": "This flow doesn't have enough boxes to export yet. Build the flow in the editor and save it first.",
+  "A triagem não encontrou urgência no que o cliente escreveu.": "Intake found no urgency in what the client wrote.",
+  "O cliente descreveu uma urgência jurídica": "The client described a legal emergency"
 }

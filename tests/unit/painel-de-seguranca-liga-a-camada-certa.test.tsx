@@ -28,6 +28,7 @@ vi.mock("@/hooks/ai/useGuardrailLayers", () => ({
         { layer: "promessa_semantica", escolha: false, padraoDoAmbiente: false, efetivo: false },
         { layer: "jailbreak", escolha: false, padraoDoAmbiente: false, efetivo: false },
         { layer: "travas_oab", escolha: false, padraoDoAmbiente: true, efetivo: false },
+        { layer: "triagem_juridica", escolha: false, padraoDoAmbiente: true, efetivo: false },
       ],
       podeEditar: true,
     },
@@ -36,7 +37,7 @@ vi.mock("@/hooks/ai/useGuardrailLayers", () => ({
 }));
 
 import { PainelDeSeguranca } from "@/app/app/ai/agents/[id]/_components/PainelDeSeguranca";
-import { CONFERENCIA_DE_ENTRADA, CONFERENCIAS_DE_SAIDA } from "@/lib/ai/guardrails/lista-de-conferencia";
+import { CONFERENCIA_DA_TRIAGEM, CONFERENCIA_DE_ENTRADA, CONFERENCIAS_DE_SAIDA } from "@/lib/ai/guardrails/lista-de-conferencia";
 
 function montar() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -48,7 +49,7 @@ function montar() {
 }
 
 /** As conferências que TÊM interruptor — as outras não se desligam. */
-const COM_ESCOLHA = [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA].filter(
+const COM_ESCOLHA = [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA, CONFERENCIA_DA_TRIAGEM].filter(
   (c) => c.camada !== null,
 );
 
