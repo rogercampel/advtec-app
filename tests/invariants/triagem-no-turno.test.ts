@@ -20,14 +20,15 @@ import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
  *
  * Molde: `travas-da-oab-no-turno.test.ts`.
  *
- * MUTAÇÕES: NÃO foram feitas contra este arquivo (o Docker estava fora quando foi escrito). Quem
- * rodar `pnpm test:db` pela primeira vez deve, ao verde, aplicar uma a uma e ver o caso citado
- * acusar: (1) apagar o bloco "URGÊNCIA JURÍDICA" do inbound-turn -> "urgência… zero chamadas";
- * (2) trocar o padrão da camada para `false` -> todos os casos de desvio; (3) tirar o `entregar`
- * do ramo `passar_ao_advogado` de `desvioDaTriagem` -> "conflito…"; (4) trocar o aviso do conflito
- * por `urgencia_juridica`/texto com a palavra conflito -> "o cliente nunca ouve conflito";
- * (5) tirar `urgencia_juridica` do CHECK do baseline -> "a passagem… registrada".
- * As mesmas regras têm mutação em `tests/unit/triagem-no-turno.test.ts` (parte pura e fiação).
+ * MUTAÇÕES FEITAS em 24/10/2026, contra Postgres (cada uma aplicada, acusada pelo caso citado e desfeita):
+ *   1. inbound-turn: bloco da urgência desligado -> 4 vermelhos ("zero chamadas ao modelo", passagem, caso, item crítico);
+ *   2. inbound-turn: padrão da camada `false` -> 5 vermelhos (urgência e recusa);
+ *   3. desvio: sem `g.entregar` no ramo de passar ao advogado -> "passagem triagem_conflito…";
+ *   4. desvio: conflito com motivo `triagem_area` -> o mesmo caso;
+ *   5. baseline: `urgencia_juridica` fora do CHECK -> "a passagem tem o motivo e a origem novos";
+ *   6. desvio: recusa sem a passagem -> "sai a recusa…" e "o cliente escreve de novo";
+ *   7. desvio: item da recusa com severidade crítica -> "sai a recusa…".
+ * As mesmas regras têm mutação na parte pura em `tests/unit/triagem-no-turno.test.ts`.
  */
 
 const container = process.env.TEST_DB_CONTAINER;
