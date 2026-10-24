@@ -339,6 +339,18 @@ export const NAV_CATALOG = [
     section: "O dia a dia da venda",
   },
   {
+    // AdvTec (fork), spec 0001.E5: o painel de medição — os cinco números do funil
+    // (fora do horário → triados → agendados → compareceram → clientes). Só no hub,
+    // como as telas vizinhas: o menu lateral está no teto da dobra. Sem `minRole`:
+    // é leitura, recortada pela RLS e pela organização ativa.
+    href: "/app/painel",
+    label: "Painel de medição",
+    description: "Os cinco números do funil, do atendimento fora do horário ao cliente fechado, com a taxa de passagem e a definição de cada um.",
+    icon: "ChartBar",
+    group: "crm",
+    section: "O dia a dia da venda",
+  },
+  {
     // Extraída do PR #418 (@clinicacentrodosorrisosc-code). Fica no CRM e no
     // sidebar porque é tela de USO DIÁRIO — quem atende abre para ver o que
     // vence hoje, do mesmo jeito que abre o Inbox. Sem `minRole`: `viewer` VÊ
