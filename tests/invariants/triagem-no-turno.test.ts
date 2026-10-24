@@ -213,7 +213,7 @@ beforeAll(async () => {
      values ($1,$2,'triagem-turno-session','WORKING','\\x00'::bytea) on conflict (id) do nothing`,
     [SESSION, ORG],
   );
-  await pool.query("insert into crm_pipelines(id,organization_id,name,slug) values($1,$2,'Casos',$1::text) on conflict (id) do nothing", [PIPE, ORG]);
+  await pool.query("insert into crm_pipelines(id,organization_id,name,slug) values($1::uuid,$2,'Casos',$1::text) on conflict (id) do nothing", [PIPE, ORG]);
   await pool.query(
     "insert into crm_stages(id,organization_id,pipeline_id,name,slug,position) values($1,$2,$3,'Novo','novo',1) on conflict (id) do nothing",
     [STAGE, ORG, PIPE],
@@ -234,6 +234,9 @@ beforeEach(async () => {
   resultadosVistos = [];
   modeloChamado = 0;
   await pool.query("delete from passagens_de_atendimento where organization_id = $1", [ORG]);
+  // O pacing anti-ban soma os envios do DIA no `pacing_ledger` e o relógio do teste é fixo: sem zerar, os casos
+  // anteriores estouram o teto e o turno é reagendado, o que não tem a ver com o que cada caso mede.
+  await pool.query("delete from pacing_ledger where organization_id = $1", [ORG]);
   await pool.query("delete from org_guardrail_layers where organization_id = $1", [ORG]);
   await pool.query("delete from messages where organization_id = $1", [ORG]);
   await pool.query("delete from send_ledger where organization_id = $1", [ORG]);
