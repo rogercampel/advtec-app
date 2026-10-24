@@ -350,7 +350,7 @@ describe("registrar_triagem: o executor completo", () => {
     await executaRegistrarTriagem(pool, c.quem, { area_do_direito: "Trabalhista" });
     await executaRegistrarTriagem(pool, c.quem, { area_do_direito: "Trabalhista", resumo_do_caso: "dispensa sem justa causa" });
     expect(await notas()).toBe(1);
-    await executaRegistrarTriagem(pool, c.quem, { area_do_direito: "Trabalhista", urgencia: "prazo vence amanhã" });
+    await executaRegistrarTriagem(pool, c.quem, { area_do_direito: "Trabalhista", urgencia: "prazo" });
     expect(await notas()).toBe(2);
   });
 
