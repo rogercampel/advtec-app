@@ -303,6 +303,10 @@ beforeEach(async () => {
   await pool.query("delete from job_queue where organization_id = $1", [ORG]);
   await pool.query("delete from disclosure_template_pointers where organization_id = $1", [ORG]);
   await pool.query("delete from outbound_copies where organization_id = $1", [ORG]);
+  // O pacing anti-ban (warm-up/teto diário do número) soma os envios do DIA no `pacing_ledger`, e o relógio
+  // do teste é fixo: sem zerar, os envios dos casos anteriores estouram o teto e o turno é reagendado
+  // ("cap de envio atingido"), o que não tem nada a ver com a trava que cada caso mede.
+  await pool.query("delete from pacing_ledger where organization_id = $1", [ORG]);
   await pool.query("delete from agent_inbox_items where organization_id = $1", [ORG]);
   await pool.query("delete from conversations where organization_id = $1", [ORG]);
   await pool.query("delete from contacts where organization_id = $1", [ORG]);
