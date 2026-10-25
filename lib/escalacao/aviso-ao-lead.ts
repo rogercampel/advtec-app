@@ -72,6 +72,8 @@ export type MotivoDoAviso =
   | "orcamento_de_ia"
   /** AdvTec: o filtro de saída (travas da OAB) barrou a resposta — quem responde é o advogado. */
   | "advogado_vai_responder"
+  /** AdvTec: a triagem achou urgência jurídica no que o cliente escreveu — o advogado foi avisado na hora. */
+  | "urgencia_juridica"
   /** AdvTec: o mesmo, num turno SEM mensagem do cliente (follow-up) — não dá para dizer "sua mensagem". */
   | "advogado_vai_assumir"
   /** O sistema decidiu escalar (sentimento, baixa confiança, etapa, termo jurídico…). */
@@ -85,7 +87,11 @@ export function motivoDoAviso(reason: string): MotivoDoAviso {
   if (reason === "requested_human") return "pediu_humano";
   if (reason === "suspected_optout") return "suspeita_de_opt_out";
   if (reason === "orcamento_de_ia") return "orcamento_de_ia";
-  if (reason === "trava_da_oab") return "advogado_vai_responder";
+  if (reason === "urgencia_juridica") return "urgencia_juridica";
+  // Conflito e área a decidir usam o aviso GENÉRICO: o cliente nunca é informado do motivo (sigilo).
+  if (reason === "trava_da_oab" || reason === "triagem_conflito" || reason === "triagem_area" || reason === "triagem_recusa") {
+    return "advogado_vai_responder";
+  }
   return "outro";
 }
 
@@ -133,6 +139,12 @@ const ABERTURAS: Record<MotivoDoAviso, readonly string[]> = {
     "Estou transferindo esta conversa para um atendente humano.",
   ],
   // AdvTec: não promete prazo nem opina; diz só que quem responde é o advogado.
+  // AdvTec: urgência. Diz só que o advogado foi avisado; não opina, não promete prazo, resposta nem "na hora".
+  urgencia_juridica: [
+    "Entendi que isso não pode esperar. O advogado do escritório foi avisado.",
+    "Recebi o que você contou e avisei o advogado do escritório.",
+    "Levei essa situação ao advogado: ele foi avisado.",
+  ],
   advogado_vai_responder: [
     "Esse assunto precisa ser respondido por um advogado do escritório. Já encaminhei sua mensagem a ele.",
     "Para isso, o ideal é falar com o advogado responsável. Passei sua mensagem para ele agora.",
@@ -198,6 +210,11 @@ const ABERTURAS_ES: Record<MotivoDoAviso, readonly string[]> = {
     "Voy a pasar tu atención a una persona del equipo.",
     "A partir de aquí te atiende alguien del equipo.",
     "Estoy transfiriendo esta conversación a una persona del equipo.",
+  ],
+  urgencia_juridica: [
+    "Entendí que esto no puede esperar. El abogado del despacho fue avisado.",
+    "Recibí lo que me contaste y avisé al abogado del despacho.",
+    "Llevé esta situación al abogado: él fue avisado.",
   ],
   advogado_vai_responder: [
     "Este asunto debe responderlo un abogado del despacho. Ya le pasé tu mensaje.",

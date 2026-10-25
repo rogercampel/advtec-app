@@ -28,6 +28,7 @@ import { BEFORE_SEND_GATES } from "@/lib/agent-engine/guardrails/before-send";
 import { CAMADAS_SEMANTICAS } from "@/lib/agent-engine/guardrails/camadas-da-org";
 import {
   CONFERENCIAS_DE_SAIDA,
+  CONFERENCIA_DA_TRIAGEM,
   CONFERENCIA_DE_ENTRADA,
 } from "@/lib/ai/guardrails/lista-de-conferencia";
 
@@ -99,7 +100,7 @@ describe("a lista da tela casa com a cadeia que roda", () => {
     // estado e mostrar "carregando…" para sempre — pego pelo teste de componente
     // ao escrever isto. O vínculo é explícito no campo `camada`, e este caso é o
     // que impede a próxima divergência.
-    const declaradas = [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA]
+    const declaradas = [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA, CONFERENCIA_DA_TRIAGEM]
       .map((c) => c.camada)
       .filter((c): c is NonNullable<typeof c> => c !== null);
 
@@ -107,7 +108,7 @@ describe("a lista da tela casa com a cadeia que roda", () => {
 
     // E o inverso: conferência COM escolha tem de declarar a camada, senão o
     // interruptor não teria o que gravar.
-    for (const c of [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA]) {
+    for (const c of [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA, CONFERENCIA_DA_TRIAGEM]) {
       if (c.escolha !== null) {
         expect(c.camada, `${c.nome} é configurável e não diz qual camada grava`).not.toBeNull();
       } else {

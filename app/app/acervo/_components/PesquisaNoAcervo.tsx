@@ -103,11 +103,11 @@ export function PesquisaNoAcervo({ podePesquisar }: { podePesquisar: boolean }) 
 
 function Teses({ problema, teses }: { problema: string; teses: TeseNaTela[] }) {
   const t = useT();
+  // Sem reset por efeito: pesquisa nova passa por "pesquisando", que desmonta isto, e volta na tese 1.
+  // O antigo useEffect(() => setAtual(0), [teses]) chegava depois do clique na CI lenta e o desfazia.
   const [atual, setAtual] = useState(0);
   const folha = useRef<HTMLDivElement>(null);
   const tese = teses[atual]!;
-
-  useEffect(() => setAtual(0), [teses]);
 
   // O único movimento da tela: a folha troca de tese deslizando 4px, a partir de um estado já legível.
   useEffect(() => {
