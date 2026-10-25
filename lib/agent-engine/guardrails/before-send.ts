@@ -80,6 +80,7 @@ import { aplicarAjustesDeEstilo, lerAjustesDeEstiloDaOrg } from './ajustes-de-es
 import type { AjusteDeEstilo, LeituraDosAjustes } from './ajustes-de-estilo-da-org';
 import { renderVetoDeAfirmacao, type ConferenciaDeFato } from './factual-claim';
 // AdvTec: as travas da OAB na saída. A lógica mora em arquivo próprio (menor diff no herdado).
+import type { VereditoDoJuiz } from '@/lib/ai/decisao/travas-oab';
 import { travasOabGate } from '@/lib/oab/gate-das-travas';
 
 /** O que os gates enxergam — carregado UMA vez sob o lock, por tentativa de envio. */
@@ -257,12 +258,16 @@ export interface GateContext {
    *    em bolhas não é barrada na que vem antes da deferência);
    *  - `injetaIdentificacao`: o turno já recusou a identificação vezes demais; o gate emenda a
    *    frase padrão no início em vez de vetar de novo.
+   *  - `juiz`: o veredito do Jev sobre ESTE corpo (`lib/ai/decisao/travas-oab.ts`), que o
+   *    `runBeforeSend` preenche por `julgarOab` antes dos gates (a cadeia é síncrona). Ausente = a
+   *    segunda camada não julgou (não decide nesta organização, ou a resposta já sai barrada).
    */
   travasOab?: {
     mensagemDoCliente: string | null;
     primeiraRespostaDoModelo: boolean;
     deferiuNoTurno: boolean;
     injetaIdentificacao: boolean;
+    juiz?: VereditoDoJuiz;
   };
   /**
    * Arma o `spinningGate`. **Ausente = ARMADO** — a direção segura aqui é a
@@ -1105,6 +1110,11 @@ export interface RunBeforeSendArgs {
    */
   conferirAfirmacoes?: (body: string) => Promise<ConferenciaDeFato | null>;
   /**
+   * AdvTec — a segunda camada das travas da OAB (`criarJuizDaOab`). Recebe o MESMO corpo final de
+   * estilo que os gates julgam; o veredito entra em `travasOab.juiz`. Só vale com `travasOab`.
+   */
+  julgarOab?: (body: string) => Promise<VereditoDoJuiz | undefined>;
+  /**
    * Modo do gate de disclosure (F4-05) quando a 1ª mensagem sai sem disclosure: 'inject'
    * (default conservador — o disclosure é sempre adicionado, garantindo a apresentação) ou
    * 'veto' (bloqueia + ensina o modelo). Knob do env (DISCLOSURE_MODE).
@@ -1333,12 +1343,14 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
   // O veredito não depende de nada lido sob o lock — só do corpo —, então ele é
   // calculado antes e entra no contexto dos gates no mesmo lugar de sempre.
   // Começa junto com a pausa humana: o cliente espera o maior dos dois, não a soma.
-  const [, semanticPromise, factualClaim] = await Promise.all([
+  const [, semanticPromise, factualClaim, juizDaOab] = await Promise.all([
     // Fora do lock (nem conexão tomada): aqui não existe transação aberta para segurar.
     args.esperaForaDoLock ? args.esperaForaDoLock() : undefined,
     args.classifyPromiseSemantic ? args.classifyPromiseSemantic(bodyDoModelo) : null,
     // Conferência de fato (#2231): mesma razão da F4-02 — grava llm_calls por outra conexão.
     args.conferirAfirmacoes ? args.conferirAfirmacoes(bodyDoModelo) : null,
+    // AdvTec — o Jev das travas da OAB: mesma razão (grava llm_calls por outra conexão).
+    args.travasOab !== undefined && args.julgarOab ? args.julgarOab(bodyDoModelo) : undefined,
   ]);
 
   const client = await args.pool.connect();
@@ -1479,7 +1491,9 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
         : {}),
       internalVocabularyEnforced: args.enforceInternalVocabulary ?? false,
       clinicalClaimEnforced: args.enforceClinicalClaim ?? false,
-      ...(args.travasOab !== undefined ? { travasOab: args.travasOab } : {}),
+      ...(args.travasOab !== undefined
+        ? { travasOab: { ...args.travasOab, ...(juizDaOab !== undefined ? { juiz: juizDaOab } : {}) } }
+        : {}),
       ...(args.agenda !== undefined ? { agenda: args.agenda } : {}),
       ...(args.followup !== undefined ? { followup: args.followup } : {}),
     };

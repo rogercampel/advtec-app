@@ -14,6 +14,7 @@ import {
   estadoEfetivoDaTarefa,
   estadoGravadoDaTarefa,
   TAREFA_DA_MANIPULACAO,
+  TAREFA_DAS_TRAVAS_OAB,
   TAREFA_DA_URGENCIA,
   TAREFA_DO_CLIMA,
   TAREFAS_DO_JEV,
@@ -80,7 +81,7 @@ describe("TAREFAS_DO_JEV", () => {
   it("a camada que a tarefa acompanha é a da verificação do MESMO ponto na Segurança", () => {
     const conferencias = [CONFERENCIA_DE_ENTRADA, ...CONFERENCIAS_DE_SAIDA];
     const comCamada = TAREFAS_DO_JEV.filter((t) => t.camada !== undefined);
-    expect(comCamada.map((t) => t.id)).toEqual([TAREFA_DA_MANIPULACAO.id]);
+    expect(comCamada.map((t) => t.id)).toEqual([TAREFA_DA_MANIPULACAO.id, TAREFA_DAS_TRAVAS_OAB.id]);
     expect(
       comCamada.filter((t) => conferencias.find((c) => c.nome === t.ponto)?.camada !== t.camada).map((t) => t.id),
     ).toEqual([]);

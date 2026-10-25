@@ -74,6 +74,7 @@ const tarefasSchema = z.object({
   campo_do_negocio: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
   sinal_de_urgencia: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
   afirmacao_de_fato: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
+  travas_oab: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
 });
 
 export const idDaTarefaSchema = tarefasSchema.keyof();

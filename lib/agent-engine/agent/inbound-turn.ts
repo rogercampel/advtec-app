@@ -232,6 +232,7 @@ import {
   CODIGO_TRAVA_OAB,
   CODIGO_TRAVA_OAB_IDENTIFICACAO,
   CODIGO_TRAVA_OAB_PEDIU_HUMANO,
+  CODIGO_TRAVA_OAB_SEM_CONFERENCIA,
   desfechoDaTravaDaOab,
   INSTRUCAO_DE_REFORMULAR,
   MENSAGEM_DE_ENTREGA_AO_ADVOGADO,
@@ -241,6 +242,7 @@ import {
   VETOS_ATE_ENTREGAR,
   VETOS_ATE_INJETAR_IDENTIFICACAO,
 } from '@/lib/oab/gate-das-travas';
+import { criarJuizDaOab } from '@/lib/ai/decisao/travas-oab';
 import { modeloJaRespondeuAoContato } from '@/lib/oab/primeira-resposta';
 import { defereAoAdvogado } from '@/lib/oab/travas';
 import type { MotivoDoAviso as MotivoDoAvisoAoCliente } from '@/lib/escalacao/aviso-ao-lead'; // AdvTec: que frase o cliente lê
@@ -3140,6 +3142,16 @@ async function executarTurnoDoAgente(
   // As travas da OAB valem neste turno? Ligadas por padrão (a spec proíbe conversa real sem
   // elas) e só fora do Testar (a prévia monta o próprio contexto: `preview.ts`).
   const travasArmadas = !preview && camadaLigada(camadas.travas_oab, true);
+  // A segunda camada (Jev): só pergunta com a tarefa `travas_oab` decidindo; um juiz por turno.
+  const julgarOab = travasArmadas
+    ? criarJuizDaOab(
+        pool,
+        createAdminClient(),
+        { organizationId: tenantId, contactId: leadId || null, agentId: agentConfig?.agentId ?? null },
+        () => (eTurnoDeResposta(liveJob()) ? mensagemDoClienteNoTurno : null),
+        deps.jev ?? {},
+      )
+    : undefined;
   // Arma o `agendaStallGate` (before-send.ts): true assim que crm_find_free_slots,
   // crm_book_appointment ou crm_reschedule_appointment executar neste turno — marcado no
   // wrapper das tools MCP, mais abaixo. `send_message` lê o valor NO MOMENTO do envio; como
@@ -3786,6 +3798,7 @@ async function executarTurnoDoAgente(
             // (follow-up) só confere as proibições. Fora do Testar e com a camada desligada,
             // `travasOabDoEnvio` é `undefined` e o gate é no-op.
             ...(travasOabDoEnvio !== undefined ? { travasOab: travasOabDoEnvio } : {}),
+            ...(julgarOab !== undefined ? { julgarOab } : {}),
             // Mesmo padrão do vocabulário interno: só o `send_message` arma — é o único
             // corpo escrito pelo modelo. `active` é ter QUALQUER ferramenta de agenda:
             // um agente que só CONSULTA promete "vou verificar" igual, e enquanto a
@@ -4056,7 +4069,9 @@ async function executarTurnoDoAgente(
           }
           if (
             chain.status === 'vetoed' &&
-            (chain.code === CODIGO_TRAVA_OAB || chain.code === CODIGO_TRAVA_OAB_PEDIU_HUMANO)
+            (chain.code === CODIGO_TRAVA_OAB ||
+              chain.code === CODIGO_TRAVA_OAB_PEDIU_HUMANO ||
+              chain.code === CODIGO_TRAVA_OAB_SEM_CONFERENCIA)
           ) {
             // AdvTec — trava da OAB. O texto barrado NUNCA sai. O 1º veto do turno é erro
             // instrutivo (o modelo reformula deferindo ao advogado); o 2º, ou o pedido de pessoa

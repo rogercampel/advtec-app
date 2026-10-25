@@ -413,6 +413,32 @@ export const TAREFA_DA_AFIRMACAO_DE_FATO = {
     "Lê a resposta que o assistente vai enviar e confere, nas evidências consultadas neste turno, se o que ele afirma sobre o negócio está escrito ali — ou se o material diz o contrário.",
 } as const satisfies TarefaDoJev;
 
+/**
+ * AdvTec — a segunda camada das travas da OAB (`./travas-oab.ts`). `soma`: o veto
+ * do Jev se junta ao das travas por padrão e nunca apaga um. Observando, nada sai (não há o que
+ * observar sem efeito); decidindo, falha do Jev = a resposta não sai e a conversa vai ao advogado.
+ */
+export const TAREFA_DAS_TRAVAS_OAB = {
+  id: "travas_oab",
+  ponto: "travas_oab",
+  primitiva: "noul",
+  alcance: "mensagem",
+  familia: "soma",
+  camada: "travas_oab",
+  aoDecidir:
+    "O Jev lê cada resposta antes de ela sair e barra a que promete resultado, orienta juridicamente ou opina sobre o caso, somando-se às travas que já existem. Se ele não responder, a resposta não sai e a conversa vai ao advogado.",
+  aoDecidirNoPonto: "Só o Jev confere; se ele não responder, a resposta não sai e a conversa vai ao advogado.",
+  aoConfirmarDecidir:
+    "A partir de agora, cada resposta do assistente passa pelo Jev antes de sair. A que ele barrar não sai, e se ele não responder a conversa vai ao advogado.",
+  concordancia: {
+    antes: "dias, o Jev e as travas por padrão concordaram em",
+    depois: "respostas — os dois deixaram sair, ou os dois barraram, a mesma resposta.",
+  },
+  rotulo: "Conferir as vedações da OAB na resposta",
+  oQueFaz:
+    "Lê a resposta que o assistente vai enviar e confere se ela promete resultado, dá orientação jurídica ou opina sobre o mérito do caso — o que a OAB proíbe ao atendimento automatizado.",
+} as const satisfies TarefaDoJev;
+
 export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
   TAREFA_DO_CLIMA,
   TAREFA_DA_MANIPULACAO,
@@ -423,6 +449,7 @@ export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
   TAREFA_DA_CONFERENCIA_DE_CAMPO,
   TAREFA_DA_URGENCIA,
   TAREFA_DA_AFIRMACAO_DE_FATO,
+  TAREFA_DAS_TRAVAS_OAB,
 ];
 
 /**

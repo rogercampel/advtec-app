@@ -277,6 +277,7 @@ describe("GET /api/v1/ai/jev", () => {
       "intent_router",
       "followup_classify",
       "afirmacao_de_fato",
+      "travas_oab",
     ]);
     expect(d.tem_ia_de_sempre).toBe(true);
     expect(d.numeros).toEqual({
@@ -764,6 +765,7 @@ describe("o Jev por tarefa na rota", () => {
       expect.objectContaining({ id: "sinal_de_urgencia", ponto: null, estado: "desligada", novo: false }),
       // A conferência de fato (#2231) cabe no aceite de cada mensagem, mas com o Jev desligado nada roda.
       expect.objectContaining({ id: "afirmacao_de_fato", ponto: "afirmacao_de_fato", estado: "desligada", novo: false }),
+      expect.objectContaining({ id: "travas_oab", ponto: "travas_oab", estado: "desligada", novo: false }),
     ]);
 
     estado.settings = { jev: { ligado: true, modo: "decide", aceite: ACEITE_ANTIGO } };
@@ -788,6 +790,7 @@ describe("o Jev por tarefa na rota", () => {
       expect.objectContaining({ id: "intent_router", rotulo: "Escolher qual agente atende" }),
       expect.objectContaining({ id: "followup_classify", rotulo: "Ler a resposta ao follow-up" }),
       expect.objectContaining({ id: "afirmacao_de_fato", rotulo: "Conferir afirmações de fato na resposta" }),
+      expect.objectContaining({ id: "travas_oab", rotulo: "Conferir as vedações da OAB na resposta" }),
     ]);
   });
 
@@ -866,6 +869,7 @@ describe("o Jev por tarefa na rota", () => {
       ["campo_do_negocio", false],
       ["sinal_de_urgencia", false],
       ["afirmacao_de_fato", false],
+      ["travas_oab", false],
     ]);
     estado.camadas = [
       { organization_id: ORG, layer: "jailbreak", enabled: false },
@@ -881,6 +885,7 @@ describe("o Jev por tarefa na rota", () => {
       ["campo_do_negocio", false],
       ["sinal_de_urgencia", false],
       ["afirmacao_de_fato", false],
+      ["travas_oab", false],
     ]);
   });
 
@@ -898,6 +903,7 @@ describe("o Jev por tarefa na rota", () => {
       ["campo_do_negocio", false],
       ["sinal_de_urgencia", false],
       ["afirmacao_de_fato", false],
+      ["travas_oab", false],
     ]);
     // O ativo de OUTRA empresa não conta — o filtro é o da sessão.
     const intencoes = (n: number) => [{ count: n }];
@@ -912,6 +918,7 @@ describe("o Jev por tarefa na rota", () => {
       ["campo_do_negocio", false],
       ["sinal_de_urgencia", false],
       ["afirmacao_de_fato", false],
+      ["travas_oab", false],
     ]);
     // Ativo, mas sem intenção nenhuma (o estado logo depois de criar um) ou com
     // mais do que cabe numa pergunta: o Jev nunca é perguntado, e "Só observa"
@@ -931,6 +938,7 @@ describe("o Jev por tarefa na rota", () => {
       ["campo_do_negocio", false],
       ["sinal_de_urgencia", false],
       ["afirmacao_de_fato", false],
+      ["travas_oab", false],
     ]);
     // E o cartão segue dizendo que a tarefa observa: é o que ela faz quando há roteador.
     const roteador = (await ler()).corpo.data.por_tarefa.find((t: { id: string }) => t.id === "roteador");
@@ -1113,6 +1121,7 @@ describe("o Jev por tarefa na rota", () => {
       campo_do_negocio: null,
       sinal_de_urgencia: motivo,
       afirmacao_de_fato: null,
+      travas_oab: null,
     });
     // A organização é a da sessão, e a pergunta é a do portão do worker.
     expect(vi.mocked(haQuemAtendaAOrganizacao).mock.calls.map(([, org]) => org)).toEqual([ORG]);
