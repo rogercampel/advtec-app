@@ -220,11 +220,13 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
       "Barra a resposta que opina sobre o caso, promete resultado, cita valor ou prazo de ganho, " +
       "faz propaganda ou deixa de dizer que é um atendimento automatizado. O texto barrado " +
       "nunca é enviado: o assistente reformula uma vez, e se esbarrar de novo a conversa é " +
-      "entregue ao advogado.",
+      "entregue ao advogado. Com o Jev conferindo as respostas, se ele não responder a conversa " +
+      "vai direto ao advogado.",
     escolha: {
       // Desligar é escolha da organização, mas a tela precisa dizer o que ela dispensa.
       custo:
-        "Não custa nada. Vem ligada. ATENÇÃO: desligar esta camada dispensa a vedação da OAB no " +
+        "Não custa nada, a menos que o Jev confira as respostas: aí cada resposta é uma chamada " +
+        "na chave do Jev. Vem ligada. ATENÇÃO: desligar esta camada dispensa a vedação da OAB no " +
         "atendimento — o assistente passa a poder prometer resultado, opinar sobre o caso e citar " +
         "valor ou prazo sem que nada o barre. Só desligue se uma pessoa confere cada resposta " +
         "antes de sair.",

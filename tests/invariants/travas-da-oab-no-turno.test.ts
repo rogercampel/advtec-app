@@ -6,6 +6,7 @@ import type * as Providers from "@/lib/agent-engine/edge/llm/providers";
 import type * as Queue from "@/lib/agent-engine/queue/queue";
 import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
 
+import type { DependenciasDoPonto } from "@/lib/ai/decisao/ponto";
 import { FRASE_DE_IDENTIFICACAO } from "@/lib/oab/gate-das-travas";
 import { modeloJaRespondeuAoContato } from "@/lib/oab/primeira-resposta";
 
@@ -124,8 +125,9 @@ function modeloQueManda(roteiro: string[]) {
   };
 }
 
-function montaHandler(doGenerate: unknown) {
+function montaHandler(doGenerate: unknown, jev?: DependenciasDoPonto) {
   return m.createInboundTurnHandler({
+    ...(jev !== undefined ? { jev } : {}),
     crmCfg: { supabase: {} as never },
     llmCfg: { anthropicApiKey: "fake" } as never,
     knobs: {
@@ -171,7 +173,7 @@ function montaHandler(doGenerate: unknown) {
 }
 
 /** Grava um inbound e roda UM turno completo por cima dele. */
-async function rodaTurno(textoDoCliente: string, roteiro: string[]): Promise<void> {
+async function rodaTurno(textoDoCliente: string, roteiro: string[], jev?: DependenciasDoPonto): Promise<void> {
   const msgId = crypto.randomUUID();
   await pool.query(
     `insert into messages (id, organization_id, conversation_id, channel_session_id, contact_id,
@@ -195,7 +197,7 @@ async function rodaTurno(textoDoCliente: string, roteiro: string[]): Promise<voi
   const [claimed] = await m.queue.claimJobs(pool, { workerId: "travas-oab", maxConcurrency: 1 });
   expect(claimed?.id).toBe(job.id);
   try {
-    await montaHandler(modeloQueManda(roteiro))(claimed!, pool, { workerId: "travas-oab" });
+    await montaHandler(modeloQueManda(roteiro), jev)(claimed!, pool, { workerId: "travas-oab" });
     await m.queue.completeJob(pool, claimed!.id, "travas-oab");
   } catch (err) {
     await m.queue.failJob(pool, claimed!.id, "travas-oab", err);
@@ -298,6 +300,7 @@ beforeEach(async () => {
   // anterior mediria o turno pulado, não a trava da OAB.
   await pool.query("delete from passagens_de_atendimento where organization_id = $1", [ORG]);
   await pool.query("delete from org_guardrail_layers where organization_id = $1", [ORG]);
+  await pool.query("update organizations set settings = settings - 'jev' where id = $1", [ORG]);
   await pool.query("delete from messages where organization_id = $1", [ORG]);
   await pool.query("delete from send_ledger where organization_id = $1", [ORG]);
   await pool.query("delete from job_queue where organization_id = $1", [ORG]);
@@ -607,5 +610,72 @@ describe("a camada é escolha da organização", () => {
 
     expect(enviados.map((e) => e.body)).toEqual([PROMESSA]);
     expect(await forceHuman()).toBe(false);
+  });
+});
+
+// ---- a segunda camada: o Jev (lib/ai/decisao/travas-oab.ts), dublê no formato real da API ----
+
+/** Escapa da trava por padrão (scripts/corpus-oab-jev.json), com a identificação da 1ª resposta. */
+const ESCAPA_DA_TRAVA = "Sou o assistente virtual do escritório. Nesse tipo de situação a empresa sempre acaba pagando.";
+
+async function jevDecide(estado: "decidindo" | "observando"): Promise<void> {
+  const jev = { ligado: true, aceite: { em: "2026-10-25T10:00:00Z", por: ORG }, tarefas: { travas_oab: { estado } } };
+  await pool.query("update organizations set settings = coalesce(settings, '{}'::jsonb) || jsonb_build_object('jev', $2::jsonb) where id = $1", [
+    ORG,
+    JSON.stringify(jev),
+  ]);
+}
+
+/** O Jev dá 0,9 em "promete" ao texto que fala em "acaba pagando"; o resto, 0,02. `null` = sem chave. */
+function jevDuble(chave: string | null) {
+  const pedidos: string[] = [];
+  const deps: DependenciasDoPonto = {
+    buscarChave: async () => chave,
+    baseUrl: "https://jev.duble.test",
+    fetchImpl: (async (_url: string | URL | Request, init?: RequestInit) => {
+      const texto = String((JSON.parse(String(init?.body)) as { state: { resposta_do_assistente: string } }).state.resposta_do_assistente);
+      pedidos.push(texto);
+      const p = texto.includes("acaba pagando") ? 0.9 : 0.02;
+      return new Response(
+        JSON.stringify({
+          model: "jev-1.13.0",
+          answers: { promete: { type: "noul", noul: p }, orienta: { type: "noul", noul: 0.02 }, merito: { type: "noul", noul: 0.02 } },
+          usage: { input_tokens: 600, output_tokens: 3 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch,
+  };
+  return { pedidos, deps };
+}
+
+describe("a segunda camada (Jev) no turno", () => {
+  it("controle: sem o Jev decidindo, a frase que escapa da trava por padrão SAI", async () => {
+    await rodaTurno(CLIENTE_DEMITIDO, [ESCAPA_DA_TRAVA]);
+    expect(enviados.map((e) => e.body)).toEqual([ESCAPA_DA_TRAVA]);
+  });
+
+  it("observando: o fornecedor não é chamado e nada muda", async () => {
+    await jevDecide("observando");
+    const jev = jevDuble("tsk_duble");
+    await rodaTurno(CLIENTE_DEMITIDO, [ESCAPA_DA_TRAVA], jev.deps);
+    expect(jev.pedidos).toEqual([]);
+    expect(enviados.map((e) => e.body)).toEqual([ESCAPA_DA_TRAVA]);
+  });
+
+  it("decidindo: o Jev barra o que a trava deixou passar; o modelo reformula e só a limpa sai", async () => {
+    await jevDecide("decidindo");
+    const jev = jevDuble("tsk_duble");
+    await rodaTurno(CLIENTE_DEMITIDO, [ESCAPA_DA_TRAVA, LIMPA], jev.deps);
+    expect(enviados.map((e) => e.body)).toEqual([LIMPA]);
+    expect(jev.pedidos).toHaveLength(2);
+    expect(await forceHuman()).toBe(false);
+  });
+
+  it("decidindo sem resposta do Jev (chave sumida): nada do modelo sai e a conversa vai ao advogado na hora", async () => {
+    await jevDecide("decidindo");
+    await rodaTurno(CLIENTE_DEMITIDO, [LIMPA], jevDuble(null).deps);
+    expect(enviados.map((e) => e.body)).not.toContain(LIMPA);
+    expect(await forceHuman()).toBe(true);
   });
 });

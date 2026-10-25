@@ -483,6 +483,26 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     },
   },
 
+  {
+    // AdvTec — a segunda camada das travas da OAB (`lib/ai/decisao/travas-oab.ts`). Só o Jev decide, e sem resposta
+    // dele a mensagem NÃO sai (fail-closed), o inverso da conferência de fato.
+    id: "travas_oab",
+    rotulo: "Conferir as vedações da OAB na resposta",
+    oQueFaz:
+      "Lê a resposta que o assistente vai enviar e confere se ela promete resultado, dá orientação jurídica ou opina sobre o mérito do caso — o que a OAB proíbe ao atendimento automatizado.",
+    papel: "proteger",
+    exige: {},
+    emissor: "lib/ai/decisao/travas-oab.ts",
+    sintomaDeFalha:
+      "O assistente promete ao cliente que ele vai ganhar a causa ou diz o que ele deve fazer juridicamente, e o escritório responde por isso na OAB.",
+    registraEm: "llm_calls",
+    decisaoRapida: {
+      primitiva: "noul",
+      oQueOJevFaz:
+        "Lê a resposta que o assistente vai enviar e confere se ela promete resultado, dá orientação jurídica ou opina sobre o mérito do caso — o que a OAB proíbe ao atendimento automatizado.",
+    },
+  },
+
   // ─────────────────────────── Lembrar e buscar ────────────────────────────
   {
     id: "compaction",

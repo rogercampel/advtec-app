@@ -65,11 +65,13 @@ import {
 } from "./travas";
 
 /** Motivos que `avalia` não dá, mas o trace precisa dizer. */
-export type MotivoDaEntrega = Motivo | "pediu_humano";
+export type MotivoDaEntrega = Motivo | "pediu_humano" | "jev_sem_resposta";
 
 export const CODIGO_TRAVA_OAB = "trava_oab";
 export const CODIGO_TRAVA_OAB_IDENTIFICACAO = "trava_oab_identificacao";
 export const CODIGO_TRAVA_OAB_PEDIU_HUMANO = "trava_oab_pediu_humano";
+/** A segunda camada (Jev) decidia e não respondeu: sem conferência, nada sai — entrega já. */
+export const CODIGO_TRAVA_OAB_SEM_CONFERENCIA = "trava_oab_sem_conferencia";
 
 /** Quantos vetos `trava_oab` o turno tolera antes de entregar ao advogado (o 1º ensina, o 2º entrega). */
 export const VETOS_ATE_ENTREGAR = 2;
@@ -120,6 +122,8 @@ function motivosDoVeto(
 
   // Camada 2 roda SEMPRE (deferir não dá licença para prometer), sobre o corpo sem o template.
   const motivos = new Set<MotivoDaEntrega>(avalia(corpoSemTemplate, { primeiraResposta: false }).violacoes.map((v) => v.motivo));
+  // Segunda camada: o veto do Jev SOMA ao das travas por padrão, nunca tira um.
+  if (armado.juiz !== undefined && armado.juiz !== "falhou") for (const m of armado.juiz.barra) motivos.add(m);
   if (primeiraResposta && !seIdentificaComoMaquina(corpoCompleto)) motivos.add("sem_identificacao_de_maquina");
   return [...motivos];
 }
@@ -144,6 +148,16 @@ export const travasOabGate: Gate = {
       corpoSemTemplate,
       armado.primeiraRespostaDoModelo && !apresentadoPeloTemplate,
     );
+    // Falha fechada: o Jev decidia e não respondeu. Reformular não adianta (ninguém confere a nova).
+    if (armado.juiz === "falhou") {
+      const todos: MotivoDaEntrega[] = [...new Set<MotivoDaEntrega>([...motivos, "jev_sem_resposta"])];
+      return {
+        pass: false,
+        code: CODIGO_TRAVA_OAB_SEM_CONFERENCIA,
+        reason: "a conferência da OAB não respondeu: a resposta não sai e a conversa é entregue ao advogado.",
+        detail: { motivos: todos.join(","), quantidade: todos.length },
+      };
+    }
     if (motivos.length === 0) return { pass: true };
 
     const detail = { motivos: motivos.join(","), quantidade: motivos.length };
@@ -220,6 +234,7 @@ const ROTULO_DO_MOTIVO: Record<MotivoDaEntrega, string> = {
   linguagem_mercantil: "linguagem de propaganda",
   sem_identificacao_de_maquina: "a primeira resposta não se identificava como atendimento automatizado",
   pediu_humano: "o cliente pediu para falar com uma pessoa",
+  jev_sem_resposta: "a conferência da OAB (Jev) não respondeu, e sem ela nenhuma resposta sai",
 };
 
 /**
