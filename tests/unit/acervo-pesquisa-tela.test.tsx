@@ -104,6 +104,24 @@ describe("a tela", () => {
     expect(screen.getByTestId("desfecho").textContent).toContain("Nenhum processo destas peças com desfecho");
   });
 
+  it("pesquisa nova volta à tese 1, mesmo vindo da tese 2", async () => {
+    const vazio = { n: 0, procedencia: { n: 0, de: 0, percentual: null }, improcedencia: { n: 0, de: 0, percentual: null },
+      procedencia_parcial: { n: 0, de: 0, percentual: null }, casosInsuficientes: true, consultadoEm: null,
+      fora: { pecasSemProcesso: 1, semEspelho: 0, descartados: 0, semDesfecho: 0 } };
+    const tese = (trecho: string) => ({ trecho, fontes: [{ citacao: "x.pdf, p. 1", processo: null }], desfecho: vazio });
+    resposta({ situacao: "encontrado", teses: [tese("Primeira A."), tese("Segunda A.")] });
+    resposta({ situacao: "encontrado", teses: [tese("Primeira B."), tese("Segunda B.")] });
+    render(<PesquisaNoAcervo podePesquisar />);
+    await pergunta("prescrição da cobrança");
+    await screen.findByText("Tese 1 de 2");
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Outras teses" })).getByRole("button", { name: "2" }));
+    await screen.findByText("Tese 2 de 2");
+
+    await pergunta("dano moral na cobrança");
+    await waitFor(() => expect(screen.getByTestId("folha-da-tese").textContent).toContain("Primeira B."));
+    expect(screen.getByText("Tese 1 de 2")).toBeTruthy();
+  });
+
   it("critério 4: matéria ausente mostra a frase fixa", async () => {
     resposta({ situacao: "nada_no_acervo", mensagem: "Não há nada no acervo do escritório sobre isso." });
     render(<PesquisaNoAcervo podePesquisar />);

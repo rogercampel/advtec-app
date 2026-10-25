@@ -30058,13 +30058,14 @@ create table if not exists public.passagens_de_atendimento (
                      'pedido_explicito','opt_out_provavel','ferramenta_do_modelo',
                      'teto_de_gasto','caso_escalado','sentimento','legado_pedido',
                      'legado_juridico','legado_etapa','legado_confianca','legado_teto',
-                     'mcp_externo','runtime_nativo','trava_de_saida')),
+                     'mcp_externo','runtime_nativo','trava_de_saida','triagem_juridica')),
   -- POR QUE saiu do automático. É o que vira FRASE na tela — o código nunca
   -- aparece para uma pessoa (`lib/escalacao/passagem.ts` → `FRASE_DO_MOTIVO`).
   motivo_codigo    text not null check (motivo_codigo in (
                      'requested_human','suspected_optout','orcamento_de_ia','low_sentiment',
                      'low_confidence','critical_stage','legal_mention','refund_mention',
-                     'caso_escalado','verificacao_manual','trava_da_oab')),
+                     'caso_escalado','verificacao_manual','trava_da_oab',
+                     'urgencia_juridica','triagem_conflito','triagem_area','triagem_recusa')),
 
   -- ─── OS QUATRO NOMES QUE O GATE DE LGPD LÊ (ver o cabeçalho) ─────────────
   --   title   ← "o que o cliente quer", em uma linha (é o título do cartão)
@@ -30148,7 +30149,7 @@ alter table public.passagens_de_atendimento
     'pedido_explicito','opt_out_provavel','ferramenta_do_modelo',
     'teto_de_gasto','caso_escalado','sentimento','legado_pedido',
     'legado_juridico','legado_etapa','legado_confianca','legado_teto',
-    'mcp_externo','runtime_nativo','trava_de_saida'));
+    'mcp_externo','runtime_nativo','trava_de_saida','triagem_juridica'));
 
 alter table public.passagens_de_atendimento
   drop constraint if exists passagens_de_atendimento_motivo_codigo_check;
@@ -30157,7 +30158,8 @@ alter table public.passagens_de_atendimento
   check (motivo_codigo in (
     'requested_human','suspected_optout','orcamento_de_ia','low_sentiment',
     'low_confidence','critical_stage','legal_mention','refund_mention',
-    'caso_escalado','verificacao_manual','trava_da_oab'));
+    'caso_escalado','verificacao_manual','trava_da_oab',
+                     'urgencia_juridica','triagem_conflito','triagem_area','triagem_recusa'));
 
 alter table public.passagens_de_atendimento
   drop constraint if exists passagens_de_atendimento_aviso_motivo_codigo_check;
@@ -59122,6 +59124,9 @@ comment on column public.webhook_lead_captures.outcome is
   'criado = virou lead novo; duplicado = envio repetido, nada mudou no card; atualizado = o card da mesma fonte recebeu o dado novo (issue #2316, só com a opção da fonte ligada); recusado = não entrou (reject_reason diz por quê).';
 
 notify pgrst, 'reload schema';
+
+-- ---- origem `triagem_juridica` e motivos `urgencia_juridica`, `triagem_conflito`, `triagem_area`, `triagem_recusa` (migration 9011, AdvTec) ----
+-- Entraram nos blocos ÚNICOS das duas constraints de `passagens_de_atendimento` (ver a 9010 abaixo).
 
 -- ---- motivo `trava_da_oab` e origem `trava_de_saida` na passagem (migration 9010, AdvTec) ----
 -- Os dois valores entraram nos blocos ÚNICOS das constraints

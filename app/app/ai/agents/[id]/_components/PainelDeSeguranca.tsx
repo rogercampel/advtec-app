@@ -48,6 +48,7 @@ import {
 
 import {
   CONFERENCIAS_DE_SAIDA,
+  CONFERENCIA_DA_TRIAGEM,
   CONFERENCIA_DE_ENTRADA,
   type ConferenciaDeSaida,
 } from "@/lib/ai/guardrails/lista-de-conferencia";
@@ -184,6 +185,7 @@ export function PainelDeSeguranca() {
         </p>
         <ul className="divide-y">
           <Conferencia c={CONFERENCIA_DE_ENTRADA} ordem={null} {...props(CONFERENCIA_DE_ENTRADA.camada)} />
+          <Conferencia c={CONFERENCIA_DA_TRIAGEM} ordem={null} {...props(CONFERENCIA_DA_TRIAGEM.camada)} />
         </ul>
       </Card>
     </div>

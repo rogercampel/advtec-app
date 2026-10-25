@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PainelDeSeguranca } from "@/app/app/ai/agents/[id]/_components/PainelDeSeguranca";
 import {
   CONFERENCIAS_DE_SAIDA,
+  CONFERENCIA_DA_TRIAGEM,
   CONFERENCIA_DE_ENTRADA,
 } from "@/lib/ai/guardrails/lista-de-conferencia";
 
@@ -74,6 +75,7 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
     expect(nomes).toEqual([
       ...CONFERENCIAS_DE_SAIDA.map((c) => c.nome),
       CONFERENCIA_DE_ENTRADA.nome,
+      CONFERENCIA_DA_TRIAGEM.nome, // AdvTec: a triagem jurídica fica junto da conferência de entrada
     ]);
   });
 
@@ -109,7 +111,11 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
     await waitFor(() =>
       expect(
         container.querySelectorAll('[data-testid^="conferencia-"][role="switch"]'),
-      ).toHaveLength(4),
+      ).toHaveLength(
+        // AdvTec: uma por conferência com escolha (clínica, travas da OAB e triagem jurídica juntam-se
+        // às duas que custam dinheiro). A distinção "paga" é cobrada logo abaixo.
+        [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA, CONFERENCIA_DA_TRIAGEM].filter((c) => c.escolha !== null).length,
+      ),
     );
     const pagas = [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA].filter(
       (c) => c.escolha?.consultaModelo === true,

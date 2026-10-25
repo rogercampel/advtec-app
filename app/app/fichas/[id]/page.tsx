@@ -137,7 +137,24 @@ export default async function FichaDoCaso({ params }: { params: Promise<{ id: st
         </div>
         <div className="sm:col-span-2" data-testid="ficha-urgencia">
           <p className="text-xs uppercase text-muted-foreground">{t("Urgência")}</p>
-          <p className="text-muted-foreground">{aDefinir}</p>
+          {ficha.urgenciaDaTriagem ? (
+            <p className="font-medium text-destructive" data-testid="ficha-urgencia-da-triagem">
+              {ficha.urgenciaDaTriagem}
+            </p>
+          ) : ficha.triagemRodou && ficha.urgenciasNoHistorico.length === 0 ? (
+            <p className="text-muted-foreground">{t("A triagem não encontrou urgência no que o cliente escreveu.")}</p>
+          ) : (
+            <p className="text-muted-foreground">{aDefinir}</p>
+          )}
+          {ficha.urgenciasNoHistorico.length > 0 && (
+            <ul className="mt-1 space-y-1 text-sm" data-testid="ficha-urgencias-no-historico">
+              {ficha.urgenciasNoHistorico.map((u, i) => (
+                <li key={`${u.id}-${i}`}>
+                  <span className="font-medium text-destructive">{t("O cliente descreveu uma urgência jurídica")}</span> ({u.rotulo}, {data(u.em)}): “{u.trecho}”
+                </li>
+              ))}
+            </ul>
+          )}
           {ficha.palavrasDeUrgencia.length > 0 && (
             <ul className="mt-1 space-y-1 text-sm">
               {ficha.palavrasDeUrgencia.map((u) => (
